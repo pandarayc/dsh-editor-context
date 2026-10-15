@@ -1,0 +1,56 @@
+{
+  "name": "dsh-editor-context",
+  "version": "0.3.0",
+  "description": "DSH plugin: bring the file and line range you are looking at in Cursor/VS Code into a conversation — as a chip in the composer (@path#L12-34) or a numbered insertion marker via /ide.",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pandarayc/dsh-editor-context.git"
+  },
+  "homepage": "https://github.com/pandarayc/dsh-editor-context#readme",
+  "bugs": {
+    "url": "https://github.com/pandarayc/dsh-editor-context/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-input-trigger",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/editor-context.test.mjs test/http.test.mjs test/client.test.mjs"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "editor-context",
+    "cursor"
+  ]
+}
