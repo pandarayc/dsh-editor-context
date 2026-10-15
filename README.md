@@ -1,92 +1,94 @@
 # dsh-editor-context
 
-把「你正在 Cursor / VS Code 里看的那几行」变成 DSH 输入框里的一张 chip。
+> **[English](README.md) · [中文](README.zh.md)**
 
-在输入框打 `@`，菜单里会多一组**编辑器位置**；选中后草稿里出现一张 chip，发出去模型收到完整的地址与行区间：
+Turn the lines you are looking at in Cursor / VS Code into a chip in the DSH composer.
+
+Type `@` in the composer and an **editor position** group appears; pick one and a chip lands in your draft. Send it, and the model receives the full address and range:
 
 ```
 @/data/project/work/qihuan/src/fancygame/hallsrv/internal/logic/logic_purchase/limit.go#L146-L154
 ```
 
-**它是你打的字，不是插件塞进对话的消息。** 这条区别是这版的重点——被塞进去的消息必须靠编号和措辞去和你说的话区分，而 chip 就是你句子的一个词：可以放在句子中间、可以改、可以删、可以不发。
+**It is text you typed, not a message the plugin pushed into the conversation.** That distinction is the point of this version. A pushed message has to be told apart from what you actually said — by numbering it, by wording it as a pointer rather than a sentence. A chip is simply a word in your sentence: it can sit mid-clause, be edited, be deleted, never be sent.
 
-配套的编辑器扩展是 [`vscode-editor-context`](https://github.com/pandarayc/vscode-editor-context)：扩展在编辑器侧把当前位置写成状态文件，本插件是 DSH 侧的读取端。
+The editor side is [`vscode-editor-context`](https://github.com/pandarayc/vscode-editor-context): the extension publishes the current position to a state file, and this plugin is the DSH-side reader.
 
 ---
 
-## 为什么不是「自动注入」
+## Why not automatic injection
 
-第一版走的是 hook + 自动注入，结论是**在高频移动光标的工作方式下它必然退化成污染**：
+The first version used a hook. The conclusion was that **it necessarily degenerates into pollution when the cursor moves often**:
 
-- hook 只在**你发消息时**触发（实测 `UserPromptSubmit` 调用数 = 回合数，不是光标移动数），
-- 但去重键是「精确位置」，你光标动得多 → 几乎每轮的位置都和上轮不同 → **去重失效**，
-- 于是**每个回合往会话历史里追加一条 durable user 消息**。
+- the hook fires **when you send a message**, not when the cursor moves (measured: one `UserPromptSubmit` call per turn),
+- but the dedup key was the exact position, and a moving cursor changes it nearly every turn, so **dedup never fired**,
+- so **every turn appended one durable user message** to the conversation.
 
-一句话：**高基数去重键 ≈ 没有去重**。
+In one line: **a high-cardinality dedup key is no dedup at all.**
 
-第二版改成显式推送（`/ide` 插入一条编号标记）。它解决了污染，但没解决语义——标记仍是「另一个人替你说话」，插三次就得靠 `#1 #2 #3` 去分。
+The second version switched to explicit push (`/ide` inserting a numbered marker). That fixed pollution but not semantics: the marker was still "someone else speaking for you", and three insertions had to be told apart by `#1 #2 #3`.
 
-第三版，也就是现在这版，把引用变成**你打出来的文本**。编号不再需要，因为位置本身就在句子里。
+This third version makes the reference **text you type**. No numbering is needed, because the position is already part of the sentence.
 
-## 全部通道对比
+## Every channel, compared
 
-| 机制 | 谁触发 | 行号 | 落到哪 | 污染 |
+| Mechanism | Triggered by | Line numbers | Lands as | Pollution |
 |---|---|---|---|---|
-| hook `additionalContext` | 平台每轮 | ✅ 文本 | durable user message | ❌ 每轮/每次变化 |
-| **`@` → 编辑器位置**（默认，本插件） | 你显式 | ✅ 结构化 | **你自己消息里的 chip** | ✅ 零 |
-| `/ide` 编号标记（可选，`mode: on-demand`） | 你显式 | ✅ 文本 | durable context 卡片 | ✅ 低 |
-| `@path 第 A-B 行`（手打） | 你显式 | ⚠️ 裸文本 | 你的消息 | ✅ 零 |
-| MCP `open_at_range`（**未实现**） | 模型/用户 | ✅ | UI 动作 | ✅ 零 |
+| hook `additionalContext` | platform, every turn | text | durable user message | every turn / every change |
+| **`@` → editor position** (default, this plugin) | you, explicitly | structured | **a chip in your own message** | none |
+| `/ide` numbered marker (opt-in, `mode: on-demand`) | you, explicitly | text | durable context card | low |
+| `@path 第 A-B 行` (typed by hand) | you, explicitly | plain text | your message | none |
+| MCP `open_at_range` (**not built**) | model / user | — | UI action | none |
 
-## 安装
+## Install
 
 ```bash
 dsh plugin --profile web add /path/to/dsh-editor-context
-# 重启 dsh-web
+# then restart dsh-web
 ```
 
-前置：`vscode-editor-context` 扩展已在编辑器侧运行（状态写在 `~/.editor-context/windows/*.json`）。
+Requires `vscode-editor-context` running in the editor (it publishes `~/.editor-context/windows/*.json`).
 
-插件是**双面包**：host 半边跑在 DSH 进程里，浏览器半边由 DSH 的 client module 系统按 `dsh.client` 声明喂给页面。同一个包，两面。
+This is a **dual-face package**: the host half runs in the DSH process, and the browser half is handed to the page by DSH's client module system through the `dsh.client` declaration. One package, two faces.
 
-## 用法
+## Usage
 
-在输入框打 `@`，选**编辑器位置**。插入的文本形如：
+Type `@` in the composer and pick **editor position**. The inserted text is:
 
 ```
-@<绝对路径>#L146        光标停在第 146 行
-@<绝对路径>#L146-L154   选中了 146-154 行
+@<absolute path>#L146        caret on line 146
+@<absolute path>#L146-L154   lines 146-154 selected
 ```
 
-模型侧的行为由一段系统提示保证（`order: 910`，紧跟 DSH 自带的 `@` 文件引用说明）：
+Model-side behaviour is guaranteed by a system-prompt section (`order: 910`, immediately after DSH's own `@` file-reference guidance):
 
 > An editor-position token has the form `@<path>#L12` or `@<path>#L12-L34`: the path is everything before `#L` … Read that path (never the whole token) when the contents matter.
 
-**为什么用 `#L`**：DSH 自带的文件规则把 `@` 后面到空白之前的一切当作路径，所以 `@path:12-34` 会被它连冒号一起吞进路径、变成两条规则争同一段文本。`#` 不在那个语法里，这个 token 的归属因此是明确的；而 `#L` 又是模型从代码托管平台早就熟悉的行号写法。
+**Why `#L`**: DSH's shipped file rule treats everything after `@` up to whitespace as a path, so `@path:12-34` would have the colon swallowed into the path, leaving two rules claiming the same span. `#` is not part of that grammar, so this token's ownership is unambiguous — and `#L` is the line-address spelling models already know from code forges.
 
-**为什么是绝对路径**：状态文件里的 `relativePath` 是相对于**编辑器工作区**的，和 agent 的工作目录通常不是一回事，`read` 打不开。
+**Why an absolute path**: `relativePath` in the state file is relative to the **editor's** workspace root, which is generally not the agent's working directory, so `read` cannot open it.
 
-## 配置
+## Configuration
 
 ```yaml
 - id: editor-context
   name: dsh-editor-context
   config:
-    http: true                       # chip 通道总开关，默认开
+    http: true                       # chip channel, on by default
     # httpPath: /editor-context/position
-    mode: off                        # push 通道，默认关
+    mode: off                        # push channel, off by default
     # stateDir: "~/.editor-context"
     # maxAgeSeconds: 3600
-    # commands: [ide, here]          # mode: on-demand 时才用到
+    # commands: [ide, here]          # only used by mode: on-demand
 ```
 
-### 两个通道互相独立
+### The two channels are independent
 
-**chip 通道**（`http`，默认开）——挂一条只读路由 `GET /editor-context/position`，浏览器半边据此提供候选。不往会话里写任何东西。
+**Chip channel** (`http`, on by default) — mounts a read-only `GET /editor-context/position`, which the browser half offers as candidates. It writes nothing into the conversation.
 
-> 路由**不额外鉴权**：DSH 的 `webServer` 先匹配已注册路由，鉴权在 SPA 兜底上。所以它只应该监听在本机（默认如此）。返回的是地址，**不含文件内容**；被 `excludeGlobs` 排除的路径返回 404，不泄露它本想藏起来的路径。
+> The route is **not additionally authenticated**: DSH's `webServer` matches registered routes before the SPA fallback that carries auth. It should therefore only listen on loopback, which is the default. It returns addresses, **never file contents**; a path rejected by `excludeGlobs` returns 404 rather than leaking the path it was meant to hide.
 
-**push 通道**（`mode`，默认 `off`）——`on-demand` 注册 `commands` 里的 slash 命令，`selection` 再加「非空选区变化」时自动推一条。推的是**编号地址标记**，不是叙述：
+**Push channel** (`mode`, `off` by default) — `on-demand` registers the slash commands named in `commands`; `selection` adds one automatic marker per changed non-empty selection. What it pushes is a **numbered address marker**, not narration:
 
 ```
 [编辑器位置 #2 · Cursor 插入标记]
@@ -95,53 +97,53 @@ dsh plugin --profile web add /path/to/dsh-editor-context
 选中第 132-136 行（共 5 行）；需要内容时 read offset=132 limit=5。
 ```
 
-编号在**会话内**递增并按 session projection 持久化，**跨重启延续**——进程内计数器重启后会从 `#1` 重来，那正是编号想消除的歧义。落进会话时 `source.form` 是 `snapshot`，GUI 因此把它渲染成折叠的 context 卡片。
+The ordinal increments **within a conversation** and is persisted through a session projection, so it **survives a restart** — a process-local counter would restart at `#1`, which is exactly the ambiguity the numbering exists to remove. On the way in, `source.form` is `snapshot`, so the GUI renders it as a collapsed context card.
 
-自动推只认**非空选区**：裸光标不是一次刻意的动作。
+Auto-push only ever fires for a **non-empty selection**: a bare caret is not a deliberate act.
 
-## 实现要点
+## Implementation notes
 
 ```
-lib/http.js    host：只读位置端点（纯函数，可单测）
-lib/index.js   host：挂路由 + 语法段 + 可选的 push 通道
-lib/client.js  浏览器：@ 候选源 + UserText 解析规则 + chip 组件
+lib/http.js    host: the read-only position endpoint (pure, unit-tested)
+lib/index.js   host: mounts the route, the grammar section, the optional push channel
+lib/client.js  browser: the @ source, the UserText rule, the chip component
 ```
 
-浏览器半边是**手写**的，没有构建步骤：
+The browser half is **hand-written**, with no build step:
 
 ```js
 window.__ModuleLoader__.load({ id: 'dsh-editor-context', factory: (require) => { … } });
 ```
 
-跨包一律走 cordis service（`ctx.inputTriggers` / `ctx.uiConversation` / `ctx.slots`），只 `require('react')`——这是所有 client bundle 的共同做法。
+Cross-package reach is always through cordis services (`ctx.inputTriggers` / `ctx.uiConversation` / `ctx.slots`), and `require('react')` is the only import — which is what every shipped client bundle does.
 
-三个容易踩的点，都是实测出来的：
+Three things that will bite, all found by running it:
 
-1. **插入要走 `{insert}` 而不是 `{text}`。** 两者不等价：`{text}` 落进的是普通字符，只有命中某个源通过 `lexicon` 发布的名单才会被装饰，而且 chip 会显示整个名字；`{insert}` 造一条 reference 记录，自带 `label`，chip 才能显示短标签。
-2. **reference 源必须带 `codec`。** 发送前每个 chip 都要经其属主的 codec 展开成模型形态，属主没有 codec 时 `serializeReference` **直接拒绝整条提交**，不会降级。
-3. **节点规则要抢在自带 `file` 规则前面。** 规则按 `order` 升序排、同起点靠前者胜，自带的 `file` 是 30，所以这里是 20。
+1. **Insert via `{insert}`, not `{text}`.** They are not equivalent. `{text}` lands ordinary characters, which are only decorated if they match a name some source publishes through its `lexicon` — and the chip then reprints the whole name. `{insert}` creates a reference record carrying its own `label`, which is how the chip can read `limit.go:146-154` while the document text stays the full token.
+2. **A reference source must carry a `codec`.** Before the sink, every chip is expanded through its owner's codec; without one, `serializeReference` **rejects the whole submission** rather than downgrading it.
+3. **The node rule has to sort before the shipped `file` rule.** Rules are ordered by ascending `order` and the first wins a same-start tie; the shipped `file` rule is 30, so this one is 20.
 
-chip 在**历史消息**里也成立：回放走的是 `UserText` 规则重新解析原文，和 composer 的 reference 节点无关。两条路都能得到 chip。
+The chip also holds up in **replayed history**: playback re-parses the original text through the `UserText` rule, with no reference node involved. Both paths produce a chip.
 
-## 为什么零依赖
+## Why zero dependencies
 
-插件通过 `link:` 安装，真实路径不在 profile 的 `node_modules` 里，裸导入 `@deepseek-ai/*` 解析不到。所以需要的几个构造器被内联（它们本来就是 `deepFreeze(structuredClone({...}))` 三行）。
+The plugin is installed via `link:`, so its real path is not inside the profile's `node_modules` and a bare `@deepseek-ai/*` import cannot resolve. The few constructors it needs are inlined (they were already three-line `deepFreeze(structuredClone({...}))` helpers).
 
-可选服务一律用 `ctx.inject([...], cb)` 而不是 `ctx.get()`：挂载顺序不归我们决定，服务可能在本插件之后才就绪，`apply` 时 `ctx.get()` 会读到 `undefined` 并**静默降级**。拿不到服务只是不注册对应功能，不会让插件挂载失败。
+Optional services are always taken with `ctx.inject([...], cb)` rather than `ctx.get()`: mount order is not ours to pick, the service may come up after this plugin, and `ctx.get()` would then read `undefined` and **degrade silently**. A missing service just means that feature is not registered — the plugin still mounts.
 
-## 测试
+## Tests
 
 ```bash
 npm test
 # 45 passed
 ```
 
-三个文件：`test/editor-context.test.mjs`（push 通道与配置）、`test/http.test.mjs`（端点）、`test/client.test.mjs`（**加载真实 bundle**，用假的 `window.__ModuleLoader__` 与 `require`，断言的是要发出去的字节）。
+Three files: `test/editor-context.test.mjs` (push channel and config), `test/http.test.mjs` (the endpoint), `test/client.test.mjs` (which **loads the real bundle** behind a fake `window.__ModuleLoader__` and `require`, asserting on the bytes that would ship).
 
-客户端那一份能抓到静态检查看不见的问题——比如漏掉 module wrapper（浏览器里同样会炸）、漏掉 codec（只有点下去才报错）。
+The client half catches what static checks cannot — a missing module wrapper (which would break in the browser too), a missing codec (which only surfaces on click).
 
-## 已知限制
+## Known limitations
 
-- 路径含空格时 `@` 需要引号形式（`@"a b.go"`），规则支持解析，但候选目前只产出无引号形态。
-- 点 chip 不会跳回编辑器：`vscode-editor-context` 只写文件，没有反向通道。要跳转需要一个入站接口，尚未实现。
-- `excludeGlobs` 在**编辑器扩展**侧配置，插件侧没有独立的排除规则。
+- A path containing spaces needs the quoted `@"a b.go"` form. The rule parses it; the candidate list does not yet produce it.
+- Clicking a chip does not jump back to the editor: `vscode-editor-context` only writes files and has no inbound channel. Jumping would need one, and it is not built.
+- `excludeGlobs` is configured on the **extension** side; the plugin has no separate exclusion rules.
