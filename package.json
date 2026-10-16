@@ -1,7 +1,7 @@
 {
   "name": "dsh-editor-context",
-  "version": "0.3.0",
-  "description": "DSH plugin: bring the file and line range you are looking at in Cursor/VS Code into a conversation — as a chip in the composer (@path#L12-34) or a numbered insertion marker via /ide.",
+  "version": "0.6.0",
+  "description": "DSH plugin: turn the lines you are looking at in Cursor/VS Code into a chip in the composer, delivered over the editor's WebSocket.",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
@@ -24,6 +24,7 @@
   },
   "files": [
     "lib",
+    "docs",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
@@ -44,7 +45,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test test/editor-context.test.mjs test/http.test.mjs test/client.test.mjs"
+    "test": "node --test test/editor-context.test.mjs test/http.test.mjs test/requests.test.mjs test/client.test.mjs"
   },
   "keywords": [
     "dsh",

@@ -735,3 +735,18 @@ serializeReference(source, ref, signal) {
 发送前把每个 chip 经其属主的 codec 展开成模型形态，**属主没有 codec 时整条提交被拒**，注释原文是 `blocks instead of silently downgrading to the clipboard text`。
 
 `serialize` 返回的必须是 **token 而不是 chip 标签**：label 给人看，token 给模型看（模型要靠它 `read`）。所以 `serialize: (ref) => Promise.resolve(ref)`。
+
+### 12.10 后记（0.4.0）：push 通道已删除
+
+上面 §11/§12 描述的架构里有两条通道，chip 通道和 push 通道。**push 通道已经删掉**，
+包括 `mode`、`commands`、`/ide`、编号标记，以及为了编号跨重启延续而存在的 session
+projection 和 `agent/pre-step` 监听器。
+
+理由不是"没人用"，而是**它默认就够不着**：`mode` 默认 `off`，`commands` 默认 `[]`，
+所以除非手写配置，那条路根本走不到。而它存在的唯一目的，是让"一条用户没写的消息"
+能被区分出来——编号、`source.form: snapshot`、折叠的 context 卡片，全是为了处理
+chip 天然没有的问题。
+
+现在 `apply` 只做两件事：挂一条只读路由，往系统提示里加一段 `#L` 语法说明。
+`test/editor-context.test.mjs` 断言 `apply` 之后没有 slash 命令、没有 per-turn
+listener、没有 session projection——也就是**这个插件没有任何办法把消息放进对话**。

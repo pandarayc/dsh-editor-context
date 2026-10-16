@@ -1,40 +1,35 @@
 # dsh-editor-context bundle patch.
 #
-# Two independent channels, two switches.
+# Two hops, neither of them an interval.
 #
-# ── 1. The chip channel (default on) ────────────────────────────────────────
+#   editor extension  --WebSocket-->  this plugin  --long poll-->  the browser
 #
-# `http: true` mounts a read-only GET /editor-context/position, and the package's
-# browser half turns it into an `@` menu entry. Picking one inserts
-# `@<absolute path>#L146-L154` into the composer. Nothing enters the
-# conversation that the user did not type, so there is no ordinal to keep and
-# nothing to tell apart from a real message.
+# The plugin dials the extension's publisher (`editorContext.ws.*` on that side),
+# and the browser half parks a request on GET /editor-context/next until a
+# delivery arrives. `http: true` also mounts GET /editor-context/position, which
+# backs the `@` menu: picking an entry inserts `@<absolute path>#L146-L154` into
+# the composer, and nothing enters the conversation that the user did not type.
 #
-#   http: false        # turn the chip channel off entirely
-#   httpPath: /…       # move the endpoint
+#   wsUrl: ws://127.0.0.1:7788/editor-context   # match editorContext.ws.*
+#   wsToken: …                                  # same string as editorContext.ws.token
+#   http: false                                 # turn the browser routes off
 #
-# ── 2. The push channel (default off) ──────────────────────────────────────
-#
-# The first implementation pushed a numbered marker (`[编辑器位置 #3 …]`) into
-# the conversation. It still works and is still the only option when the user
-# cannot type — `selection` mode watches the editor instead — but it is opt-in,
-# because a pushed marker is a message the user did not write.
-#
-#   off          (default) nothing is ever pushed; no slash command exists
-#   on-demand              `commands` below are registered, e.g. /ide
-#   selection              the above, plus one automatic marker per *changed
-#                          non-empty selection*. A bare cursor never triggers it.
-#
-# Markers are rendered as context rows rather than as the user's words, because
-# their `source.form` is `snapshot`; the numbering is durable, so it survives a
-# restart and a resumed conversation.
+# Up to 0.3.0 there was a second, opt-in "push channel" (`mode: on-demand` or
+# `selection`) that injected a numbered marker into the conversation. It is gone:
+# a marker is a message the user did not write, it needs an ordinal so that three
+# of them can be told apart, and the chip made all of that unnecessary. See
+# CHANGELOG 0.4.0.
 - insert:
     - id: editor-context
       name: 'dsh-editor-context'
       config:
-        mode: off
-        # stateDir: "~/.editor-context"   # where the editor extension publishes
-        # maxAgeSeconds: 3600             # ignore a position older than this
-        # commands: [ide, here]           # slash-command names for mode: on-demand
-        # http: false                     # disable the composer chip channel
+        # wsUrl: "ws://127.0.0.1:7788/editor-context"  # the editor's publisher
+        # wsToken: ""                    # required if that side set a token
+        # wsName: dsh                    # subscriber identity, and its send target
+        # wsLabel: DSH                   # how the editor's picker names it
+        # includeText: true              # ask for the selected text too
+        # autoSelection: false           # also receive every changed selection
+        # stateDir: "~/.editor-context"  # where window state is published
+        # maxAgeSeconds: 3600            # ignore a position older than this
+        # http: false                    # disable the browser routes
         # httpPath: /editor-context/position

@@ -2,71 +2,98 @@
 
 > **[English](README.md) · [中文](README.zh.md)**
 
-Turn the lines you are looking at in Cursor / VS Code into a chip in the DSH composer.
+Turn the lines you are looking at in Cursor / VS Code into a chip in the DSH
+composer.
 
-Type `@` in the composer and an **editor position** group appears; pick one and a chip lands in your draft. Send it, and the model receives the full address and range:
+Type `@`, pick **editor position**, and a chip lands in your draft. Send it, and
+the model receives the file and the range:
 
 ```
-@/data/project/work/qihuan/src/fancygame/hallsrv/internal/logic/logic_purchase/limit.go#L146-L154
+@/data/project/qihuan/hallsrv/internal/logic/logic_purchase/limit.go#L146-L154
 ```
 
-**It is text you typed, not a message the plugin pushed into the conversation.** That distinction is the point of this version. A pushed message has to be told apart from what you actually said — by numbering it, by wording it as a pointer rather than a sentence. A chip is simply a word in your sentence: it can sit mid-clause, be edited, be deleted, never be sent.
+That is the whole feature. The position reaches the conversation because you put
+it in your own sentence — nothing is injected behind you — so there is no
+numbering to disambiguate, no auto-injection to switch off, and nothing to
+configure. A reference you typed needs none of that.
 
-The editor side is [`vscode-editor-context`](https://github.com/pandarayc/vscode-editor-context): the extension publishes the current position to a state file, and this plugin is the DSH-side reader.
+## What you need
 
----
-
-## Why not automatic injection
-
-The first version used a hook. The conclusion was that **it necessarily degenerates into pollution when the cursor moves often**:
-
-- the hook fires **when you send a message**, not when the cursor moves (measured: one `UserPromptSubmit` call per turn),
-- but the dedup key was the exact position, and a moving cursor changes it nearly every turn, so **dedup never fired**,
-- so **every turn appended one durable user message** to the conversation.
-
-In one line: **a high-cardinality dedup key is no dedup at all.**
-
-The second version switched to explicit push (`/ide` inserting a numbered marker). That fixed pollution but not semantics: the marker was still "someone else speaking for you", and three insertions had to be told apart by `#1 #2 #3`.
-
-This third version makes the reference **text you type**. No numbering is needed, because the position is already part of the sentence.
-
-## Every channel, compared
-
-| Mechanism | Triggered by | Line numbers | Lands as | Pollution |
-|---|---|---|---|---|
-| hook `additionalContext` | platform, every turn | text | durable user message | every turn / every change |
-| **`@` → editor position** (default, this plugin) | you, explicitly | structured | **a chip in your own message** | none |
-| `/ide` numbered marker (opt-in, `mode: on-demand`) | you, explicitly | text | durable context card | low |
-| `@path 第 A-B 行` (typed by hand) | you, explicitly | plain text | your message | none |
-| MCP `open_at_range` (**not built**) | model / user | — | UI action | none |
+- DSH, running the web profile (`dsh web`)
+- The editor half: **[`vscode-editor-context`](https://github.com/pandarayc/vscode-editor-context)**,
+  publishing `~/.editor-context/windows/*.json`
 
 ## Install
 
 ```bash
 dsh plugin --profile web add /path/to/dsh-editor-context
-# then restart dsh-web
+# then restart dsh-web — plugins load at process start
 ```
 
-Requires `vscode-editor-context` running in the editor (it publishes `~/.editor-context/windows/*.json`).
+## Use
 
-This is a **dual-face package**: the host half runs in the DSH process, and the browser half is handed to the page by DSH's client module system through the `dsh.client` declaration. One package, two faces.
-
-## Usage
-
-Type `@` in the composer and pick **editor position**. The inserted text is:
+In the composer, type `@`. An **editor position** group appears with one row —
+where you are right now:
 
 ```
-@<absolute path>#L146        caret on line 146
-@<absolute path>#L146-L154   lines 146-154 selected
+@
+├─ editor position
+│    limit.go:146-154        hallsrv/internal/logic/…/limit.go
+└─ reference
+     src/…  tests/…  …
 ```
 
-Model-side behaviour is guaranteed by a system-prompt section (`order: 910`, immediately after DSH's own `@` file-reference guidance):
+Picking it puts a chip in your draft as a word in your sentence. Type around it,
+edit it, delete it, never send it: it is ordinary draft text, and it stays a chip
+in replayed history too.
 
-> An editor-position token has the form `@<path>#L12` or `@<path>#L12-L34`: the path is everything before `#L` … Read that path (never the whole token) when the contents matter.
+The chip is short (`limit.go:146-154`), but the model receives the full token.
+The send path expands every reference through its owner's codec before it goes
+out, so the model sees an address it can open, not a label.
 
-**Why `#L`**: DSH's shipped file rule treats everything after `@` up to whitespace as a path, so `@path:12-34` would have the colon swallowed into the path, leaving two rules claiming the same span. `#` is not part of that grammar, so this token's ownership is unambiguous — and `#L` is the line-address spelling models already know from code forges.
+| You insert | The model receives |
+|---|---|
+| `@<absolute path>#L146` | the caret is on line 146 |
+| `@<absolute path>#L146-L154` | lines 146-154 are selected |
 
-**Why an absolute path**: `relativePath` in the state file is relative to the **editor's** workspace root, which is generally not the agent's working directory, so `read` cannot open it.
+**The absolute path is what the model gets**, because `relativePath` in the state
+file is relative to the *editor's* workspace root, which is generally not the
+agent's working directory — `read` could not open it.
+
+**Why `#L`.** DSH's shipped file rule treats everything after `@` up to
+whitespace as a path, so `@path:12-34` would have the colon swallowed into the
+path and two rules claiming the same span. `#` is outside that grammar, so this
+token's ownership is unambiguous — and `#L` is the line-address spelling models
+already know from web forges.
+
+## From the editor, without switching windows
+
+The same position can be sent from Cursor / VS Code instead of typed here:
+**Add to Bot** on the editor title bar. The chip appears in your draft the moment
+you click, so you can point at three places in a row and then ask one question
+about all three.
+
+```
+Cursor: Add to Bot on limit.go:146-154
+   ↓  the extension pushes a delivery frame over its WebSocket
+   ↓  this plugin is dialled in and receives it in the same tick
+   ↓  your open tab holds a parked long poll; it wakes and inserts
+DSH composer: [limit.go:146-154]  ← in your draft, unsent
+```
+
+The extension runs the WebSocket **server** and this plugin is the **client**.
+That direction is not arbitrary: Node ships a WebSocket client and no server, so
+the half that needs a library is the one living in a VSIX — which is why this
+plugin still has no dependencies at all.
+
+Neither hop is an interval. The editor pushes; the plugin's long poll parks until
+there is something to hand the browser. An idle conversation is one open socket
+and one parked response, not a request per second.
+
+The delivery carries the **text** as well as the address and the range. A delivery
+is a snapshot, not a pointer: a pointer goes stale the moment the file is edited,
+moved or reverted, and the agent is then reasoning about code that no longer
+exists.
 
 ## Configuration
 
@@ -74,76 +101,84 @@ Model-side behaviour is guaranteed by a system-prompt section (`order: 910`, imm
 - id: editor-context
   name: dsh-editor-context
   config:
-    http: true                       # chip channel, on by default
-    # httpPath: /editor-context/position
-    mode: off                        # push channel, off by default
-    # stateDir: "~/.editor-context"
+    # wsUrl: "ws://127.0.0.1:7788/editor-context"   # the editor extension's publisher
+    # wsToken: ""                    # required if that side set editorContext.ws.token
+    # wsName: dsh                    # this subscriber's identity, and its send target
+    # wsLabel: DSH                   # how the editor's recipient picker names it
+    # includeText: true              # ask for the selected text, not only the address
+    # autoSelection: false           # also receive every changed selection
+    # stateDir: "~/.editor-context"  # where the extension writes window state
     # maxAgeSeconds: 3600
-    # commands: [ide, here]          # only used by mode: on-demand
+    # http: false                    # disable the browser routes entirely
+    # httpPath: /editor-context/position
 ```
 
-### The two channels are independent
+`wsUrl` must match `editorContext.ws.host` / `.port` / `.path` on the extension
+side. If that side sets a token, this side needs the same string or the publisher
+refuses the subscription — and says so in the DSH log rather than failing
+silently.
 
-**Chip channel** (`http`, on by default) — mounts a read-only `GET /editor-context/position`, which the browser half offers as candidates. It writes nothing into the conversation.
+The plugin mounts a read-only `GET /editor-context/position` on DSH's web server,
+which the browser half reads. It returns an address and a line range — never file
+contents. A path the extension's `excludeGlobs` rejected answers 404, so the
+exclusion rule does not leak the path it is hiding.
 
-> The route is **not additionally authenticated**: DSH's `webServer` matches registered routes before the SPA fallback that carries auth. It should therefore only listen on loopback, which is the default. It returns addresses, **never file contents**; a path rejected by `excludeGlobs` returns 404 rather than leaking the path it was meant to hide.
+That route is matched before DSH's SPA fallback and is therefore **not
+additionally authenticated**. It is meant for loopback, which is the default;
+`http: false` removes it.
 
-**Push channel** (`mode`, `off` by default) — `on-demand` registers the slash commands named in `commands`; `selection` adds one automatic marker per changed non-empty selection. What it pushes is a **numbered address marker**, not narration:
+## Troubleshooting
+
+| Symptom | What to check |
+|---|---|
+| `@` shows no **editor position** row | `cat ~/.editor-context/windows/*.json` — no file means the extension is not installed or not activated |
+| …the row is there but stale | the position is older than `maxAgeSeconds`; move the caret in the editor |
+| …the row is missing only in some files | the path matches `editorContext.excludeGlobs` on the extension side. That is by design: not even the path is published |
+| nothing happens at all | `curl -s http://127.0.0.1:3080/editor-context/position` — expect `{"ok":true,…}` or a `404`, never a connection error |
+
+## Limitations
+
+- **A path containing spaces needs the quoted form**, `@"a b.go"#L12`. The rule
+  parses it; the candidate list does not yet produce it.
+- **Clicking a chip does not jump back to the editor.**
+  `vscode-editor-context` only writes files and has no inbound channel.
+- **Exclusion is configured on the extension side**, not here. The plugin has no
+  rules of its own, and none are needed: it can only offer what the extension
+  chose to publish.
+
+## Layout
 
 ```
-[编辑器位置 #2 · Cursor 插入标记]
-绝对路径：/data/project/.../trigger_gift.go
-工作区相对路径：hallsrv/internal/logic/logic_trigger_gift/trigger_gift.go
-选中第 132-136 行（共 5 行）；需要内容时 read offset=132 limit=5。
+lib/state.js       the position document: one schema, one parser
+lib/subscribe.js   host: the WebSocket client that dials the editor
+lib/deliveries.js  host: the queue between that socket and the browser
+lib/http.js        host: the two read-only routes, pure and unit-tested
+lib/index.js       host: mounts the routes and the token-grammar prompt section
+lib/client.js      browser: the @ source, the UserText rule, the chip component,
+                   and the intake that inserts what the editor sends
 ```
 
-The ordinal increments **within a conversation** and is persisted through a session projection, so it **survives a restart** — a process-local counter would restart at `#1`, which is exactly the ambiguity the numbering exists to remove. On the way in, `source.form` is `snapshot`, so the GUI renders it as a collapsed context card.
-
-Auto-push only ever fires for a **non-empty selection**: a bare caret is not a deliberate act.
-
-## Implementation notes
-
-```
-lib/http.js    host: the read-only position endpoint (pure, unit-tested)
-lib/index.js   host: mounts the route, the grammar section, the optional push channel
-lib/client.js  browser: the @ source, the UserText rule, the chip component
-```
-
-The browser half is **hand-written**, with no build step:
-
-```js
-window.__ModuleLoader__.load({ id: 'dsh-editor-context', factory: (require) => { … } });
-```
-
-Cross-package reach is always through cordis services (`ctx.inputTriggers` / `ctx.uiConversation` / `ctx.slots`), and `require('react')` is the only import — which is what every shipped client bundle does.
-
-Three things that will bite, all found by running it:
-
-1. **Insert via `{insert}`, not `{text}`.** They are not equivalent. `{text}` lands ordinary characters, which are only decorated if they match a name some source publishes through its `lexicon` — and the chip then reprints the whole name. `{insert}` creates a reference record carrying its own `label`, which is how the chip can read `limit.go:146-154` while the document text stays the full token.
-2. **A reference source must carry a `codec`.** Before the sink, every chip is expanded through its owner's codec; without one, `serializeReference` **rejects the whole submission** rather than downgrading it.
-3. **The node rule has to sort before the shipped `file` rule.** Rules are ordered by ascending `order` and the first wins a same-start tie; the shipped `file` rule is 30, so this one is 20.
-
-The chip also holds up in **replayed history**: playback re-parses the original text through the `UserText` rule, with no reference node involved. Both paths produce a chip.
-
-## Why zero dependencies
-
-The plugin is installed via `link:`, so its real path is not inside the profile's `node_modules` and a bare `@deepseek-ai/*` import cannot resolve. The few constructors it needs are inlined (they were already three-line `deepFreeze(structuredClone({...}))` helpers).
-
-Optional services are always taken with `ctx.inject([...], cb)` rather than `ctx.get()`: mount order is not ours to pick, the service may come up after this plugin, and `ctx.get()` would then read `undefined` and **degrade silently**. A missing service just means that feature is not registered — the plugin still mounts.
-
-## Tests
+This is a **dual-face package**: the host half runs in the DSH process, the
+browser half is handed to the page by DSH's client module system through the
+`dsh.client` declaration. The browser half is hand-written with no build step and
+imports only `react`; cross-package reach is always through cordis services
+(`ctx.inputTriggers` / `ctx.uiConversation` / `ctx.slots`).
 
 ```bash
-npm test
-# 45 passed
+npm test    # 39 passed
 ```
 
-Three files: `test/editor-context.test.mjs` (push channel and config), `test/http.test.mjs` (the endpoint), `test/client.test.mjs` (which **loads the real bundle** behind a fake `window.__ModuleLoader__` and `require`, asserting on the bytes that would ship).
+Five files: `test/editor-context.test.mjs` (the reader, the config, and what
+`apply` registers), `test/http.test.mjs` (both routes and the browser payload),
+`test/deliveries.test.mjs` (the queue), `test/subscribe.test.mjs` (the socket
+client, against a socket double), and `test/client.test.mjs`, which loads the
+**real** bundle behind a fake `window.__ModuleLoader__` and asserts on the bytes
+that ship.
 
-The client half catches what static checks cannot — a missing module wrapper (which would break in the browser too), a missing codec (which only surfaces on click).
+For why this plugin cannot put anything into a conversation, what it used to do
+instead, and the three sharp edges in the client half:
+[docs/internals.md](docs/internals.md).
 
-## Known limitations
+## License
 
-- A path containing spaces needs the quoted `@"a b.go"` form. The rule parses it; the candidate list does not yet produce it.
-- Clicking a chip does not jump back to the editor: `vscode-editor-context` only writes files and has no inbound channel. Jumping would need one, and it is not built.
-- `excludeGlobs` is configured on the **extension** side; the plugin has no separate exclusion rules.
+MIT

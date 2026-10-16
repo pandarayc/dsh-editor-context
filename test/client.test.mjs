@@ -16,7 +16,7 @@ const ENTRY_ID = 'dsh-editor-context';
 
 /**
  * Load `lib/client.js` and return its module exports.
- * @returns {Promise<{id: string, exports: {apply: Function, inject: string[]}}>}
+ * @returns {Promise<{id: string, exports: {apply: Function, inject: string[]}, react: object, effects: Function[]}>}
  */
 async function loadClientHalf() {
   let captured;
@@ -31,28 +31,45 @@ async function loadClientHalf() {
     else globalThis.window = previous;
   }
   assert.ok(captured, 'the bundle must register itself with the module loader');
-  const React = { createElement: (type, props, ...children) => ({ type, props, children }) };
+  /** Effects the bundle asked React to run, so a component can be driven headlessly. */
+  const effects = [];
+  const React = {
+    createElement: (type, props, ...children) => ({ type, props, children }),
+    useEffect: (fn) => {
+      effects.push(fn());
+    },
+  };
   const exports = captured.factory((id) => {
     if (id === 'react') return React;
     throw new Error(`unexpected require("${id}")`);
   });
-  return { id: captured.id, exports };
+  return { id: captured.id, exports, react: React, effects };
 }
 
-/** A cordis context that records registrations. */
+/** A cordis context that records registrations, keyed by the slot they went into. */
 function fakeCtx() {
   const state = { rules: [], nodes: [], sources: [], effects: 0 };
+  const registrations = [];
+  const sessions = { scope: (sessionId) => ({ sessionId, kind: 'actx' }) };
+  const conversation = { input: { for: () => ({ addFiles: () => true }) } };
   return {
     ...state,
     state,
+    registrations,
+    sessions,
+    conversation,
     uiConversation: { userText: { register: (rule) => state.rules.push(rule) } },
     slots: {
       inject: (slot, callback) => {
-        for (const _ of callback()) void _;
+        for (const registration of callback()) registrations.push({ slot, ...registration });
       },
-      register: (definition, component) => state.nodes.push({ definition, component }),
+      register: (definition, component) => {
+        state.nodes.push({ definition, component });
+        return { definition, component };
+      },
     },
     inputTriggers: { registerSource: (source) => state.sources.push(source) },
+    get: (service) => (service === 'conversation' ? conversation : undefined),
     effect: (fn) => {
       state.effects += 1;
       return fn();
@@ -69,7 +86,6 @@ const READING = {
   ok: true,
   absolutePath: '/w/src/fancygame/hallsrv/internal/logic/logic_purchase/limit.go',
   workspacePath: 'hallsrv/internal/logic/logic_purchase/limit.go',
-  appName: 'Cursor',
   selection: { startLine: 165, endLine: 185, isEmpty: false },
   updatedAt: '2026-10-15T00:00:00.000Z',
 };
@@ -79,19 +95,74 @@ test('the bundle registers under the loader entry id', async () => {
   assert.equal(id, ENTRY_ID, 'the id must match the mounted row name the module route is keyed by');
 });
 
-test('apply waits for the three services it reaches through', async () => {
+test('apply waits for the four services it reaches through', async () => {
   const { exports } = await loadClientHalf();
-  assert.deepEqual(exports.inject, ['inputTriggers', 'uiConversation', 'slots']);
+  assert.deepEqual(exports.inject, ['inputTriggers', 'uiConversation', 'slots', 'sessions']);
 });
 
-test('apply registers one rule, one node slot and one trigger source', async () => {
+test('apply registers one rule, two slot entries and one trigger source', async () => {
   const { exports } = await loadClientHalf();
   const ctx = fakeCtx();
   exports.apply(ctx);
   assert.deepEqual(ctx.state.rules.map((r) => r.id), ['editorPosition']);
-  assert.deepEqual(ctx.state.nodes.map((n) => n.definition.key), ['editorPosition']);
-  assert.equal(ctx.state.nodes[0].definition.name, 'conversation.user.text.node');
+  assert.deepEqual(
+    ctx.registrations.map((r) => `${r.slot} ${r.definition.key ?? r.definition.id}`),
+    ['conversation.user.text.node editorPosition', 'conversation.input.dock editor-position-intake'],
+  );
   assert.deepEqual(ctx.state.sources.map((s) => `${s.trigger}${s.name}`), ['@editor-position']);
+});
+
+test('the intake slot resolves the composer it should insert into', async () => {
+  const { exports } = await loadClientHalf();
+  const ctx = fakeCtx();
+  exports.apply(ctx);
+  const intake = ctx.registrations.find((r) => r.definition.id === 'editor-position-intake');
+
+  // A slot's `inject` is the supported way to learn which session is on screen.
+  const props = intake.definition.inject('session-7');
+  assert.equal(typeof props.insert, 'function');
+  assert.equal(intake.definition.inject('session-7').insert, props.insert, 'memoised, so the effect does not restart each render');
+
+  let asked = null;
+  ctx.conversation.input.for = (actx) => {
+    asked = actx;
+    return {
+      addFiles: (references, ids) => {
+        asked = { actx, references, ids };
+        return true;
+      },
+    };
+  };
+  const applied = props.insert({
+    absolutePath: '/w/src/limit.go',
+    workspacePath: 'src/limit.go',
+    selection: { startLine: 146, endLine: 154, isEmpty: false },
+  });
+  assert.equal(applied, true);
+  assert.equal(asked.actx.sessionId, 'session-7', 'the session scope comes from the slot, not from a global');
+  assert.deepEqual(asked.ids, [], 'a position is not an attachment');
+  assert.deepEqual(asked.references, [
+    {
+      source: 'editor-position',
+      ref: '@/w/src/limit.go#L146-L154',
+      label: 'limit.go:146-154',
+      appearance: 'file',
+      clipboardText: '@/w/src/limit.go#L146-L154',
+    },
+  ]);
+});
+
+test('the intake tolerates a session that has gone away', async () => {
+  const { exports } = await loadClientHalf();
+  const ctx = fakeCtx();
+  exports.apply(ctx);
+  const props = ctx.registrations.find((r) => r.definition.id === 'editor-position-intake').definition.inject('gone');
+  ctx.sessions.scope = () => undefined;
+  assert.equal(props.insert({ absolutePath: '/w/src/a.ts' }), false);
+  ctx.sessions.scope = () => {
+    throw new Error('torn down');
+  };
+  assert.equal(props.insert({ absolutePath: '/w/src/a.ts' }), false, 'a teardown mid-click is not an error to surface');
 });
 
 test('the rule beats the built-in file rule at the same start', async () => {
@@ -282,4 +353,73 @@ test('the node component renders the address it was given', async () => {
   assert.deepEqual(element.children, ['limit.go:165-185']);
   assert.equal(element.props.title, '/w/a/limit.go');
   assert.equal(element.props['data-editor-position'], '165-185');
+});
+
+/** Wait for a predicate, so a background loop can be observed without sleeping blindly. */
+async function until(predicate, timeoutMs = 4_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await new Promise((resolve) => {
+      setTimeout(resolve, 10);
+    });
+  }
+  return predicate();
+}
+
+test('the intake long-polls, inserts what arrives, and never replays a seq', async () => {
+  const { exports, effects } = await loadClientHalf();
+  const ctx = fakeCtx();
+  exports.apply(ctx);
+  const intake = ctx.registrations.find((r) => r.definition.id === 'editor-position-intake');
+
+  const inserted = [];
+  ctx.conversation.input.for = () => ({ addFiles: (references) => { inserted.push(references[0]); return true; } });
+
+  const asked = [];
+  const reading = {
+    seq: 7,
+    absolutePath: '/w/src/limit.go',
+    workspacePath: 'src/limit.go',
+    selection: { startLine: 146, endLine: 154, isEmpty: false },
+  };
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    asked.push(String(url));
+    assert.equal(options.cache, 'no-store');
+    assert.ok(options.signal, 'every request must be abortable, or a closed tab leaks a parked promise');
+    if (asked.length === 1) {
+      // The host parked the response and the hold expired with nothing to say.
+      await new Promise((resolve) => {
+        setTimeout(resolve, 1_100);
+      });
+      return { status: 204, ok: false };
+    }
+    // Then a click lands, and afterwards the host answers with the same seq
+    // again — which must not become a second chip.
+    return { status: 200, ok: true, json: async () => reading };
+  };
+
+  try {
+    const props = intake.definition.inject('s1');
+    intake.component(props);
+    assert.equal(await until(() => inserted.length >= 1), true, 'the delivered position reached the composer');
+    assert.deepEqual(asked, ['/editor-context/next?since=0', '/editor-context/next?since=0']);
+    assert.deepEqual(inserted[0], {
+      source: 'editor-position',
+      ref: '@/w/src/limit.go#L146-L154',
+      label: 'limit.go:146-154',
+      appearance: 'file',
+      clipboardText: '@/w/src/limit.go#L146-L154',
+    });
+
+    // Let the loop consume several replayed replies.
+    assert.equal(await until(() => asked.length >= 4), true);
+    assert.equal(inserted.length, 1, 'a seq already consumed is dropped, so the loop is idempotent');
+    assert.equal(asked[asked.length - 1], '/editor-context/next?since=7', 'the cursor advances with the delivery');
+  } finally {
+    for (const stop of effects) if (typeof stop === 'function') stop();
+    if (previousFetch === undefined) delete globalThis.fetch;
+    else globalThis.fetch = previousFetch;
+  }
 });
