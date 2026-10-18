@@ -45,6 +45,15 @@ function fakeSocket() {
         handlers.get('error')?.({});
         handlers.get('close')?.({});
       },
+      /**
+       * A pre-open failure with no close behind it — what Node's built-in
+       * WebSocket actually does when the dial is refused. Modelled separately
+       * because the two cases used to be conflated, and the difference is the
+       * bug: `fail()` hid it by being kinder than the real socket.
+       */
+      failSilently() {
+        handlers.get('error')?.({});
+      },
     };
     sockets.push(socket);
     return socket;
@@ -163,6 +172,22 @@ test('a dropped connection is retried with backoff, and start-stop is idempotent
   assert.equal(fake.sockets.length, after, 'stop() stops dialling');
   assert.equal(fake.last.closed, true);
   assert.ok(lines.length > 0);
+});
+
+test('a refused dial is retried even though the socket never closes', async () => {
+  const { instance, fake, lines } = subscriber({ retryMs: 5 });
+  instance.start();
+  assert.equal(fake.sockets.length, 1);
+
+  // Exactly what Node 22's WebSocket does on ECONNREFUSED: one error, and then
+  // silence. It stays in CONNECTING and never emits close.
+  fake.last.failSilently();
+  await new Promise((resolve) => setTimeout(resolve, 40));
+
+  assert.equal(fake.sockets.length, 2, 'an editor that is simply not open is retried, not given up on');
+  assert.equal(fake.sockets[0].closed, true, 'the half-open socket is abandoned rather than leaked');
+  assert.match(lines.join('\n'), /retrying in \d+ms/);
+  instance.stop();
 });
 
 test('a socket that cannot even be constructed schedules a retry', async () => {

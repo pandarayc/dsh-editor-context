@@ -45,7 +45,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test test/editor-context.test.mjs test/http.test.mjs test/requests.test.mjs test/client.test.mjs"
+    "test": "node --test test/*.test.mjs"
   },
   "keywords": [
     "dsh",
