@@ -13,6 +13,9 @@ import { after, test } from 'node:test';
 
 import { apply, readPosition, resolveStateDir } from '../lib/index.js';
 
+/** One throwaway log for the whole file: a test must not append to the live one. */
+const TEST_LOG = '/tmp/editor-context-apply-test.log';
+
 /**
  * `apply` dials the editor's socket, which no unit test should actually do: the
  * address would be whatever happens to be on 127.0.0.1:7788. The double keeps the
@@ -169,7 +172,7 @@ test('readPosition keeps an empty context, which is how "publish nothing" travel
 
 test('apply registers the three read-only routes and the token-grammar section, and nothing else', () => {
   const ctx = fakeCtx();
-  apply(ctx, { stateDir: '/x' });
+  apply(ctx, { stateDir: '/x', logFile: TEST_LOG });
 
   assert.deepEqual(
     ctx.routes.map((route) => `${route.kind} ${route.path}`),
@@ -190,7 +193,7 @@ test('apply registers the three read-only routes and the token-grammar section, 
 
 test('the grammar section stops the model reading #L as part of the path', () => {
   const ctx = fakeCtx();
-  apply(ctx, {});
+  apply(ctx, { logFile: TEST_LOG });
   const [section] = ctx.sections;
   assert.match(section.text, /#L12-L34/);
   assert.match(section.text, /path is everything before/);
@@ -199,18 +202,18 @@ test('the grammar section stops the model reading #L as part of the path', () =>
 
 test('http: false leaves the plugin with only the grammar section', () => {
   const ctx = fakeCtx();
-  apply(ctx, { http: false });
+  apply(ctx, { http: false, logFile: TEST_LOG });
   assert.deepEqual(ctx.routes, [], 'no endpoints for the browser to read');
   assert.equal(ctx.sections.length, 1, 'the model still needs the token grammar');
 });
 
 test('a custom httpPath moves the current-position route only', () => {
   const moved = fakeCtx();
-  apply(moved, { httpPath: '/custom/where' });
+  apply(moved, { httpPath: '/custom/where', logFile: TEST_LOG });
   assert.deepEqual(moved.routes.map((route) => route.path), ['/custom/where', '/editor-context/next', '/editor-context/status']);
 
   const bogus = fakeCtx();
-  apply(bogus, { httpPath: 'custom/where' });
+  apply(bogus, { httpPath: 'custom/where', logFile: TEST_LOG });
   assert.equal(bogus.routes[0].path, '/editor-context/position', 'a non-absolute path falls back to the default');
 });
 

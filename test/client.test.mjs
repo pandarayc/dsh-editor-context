@@ -14,6 +14,9 @@ import { test } from 'node:test';
 
 const ENTRY_ID = 'dsh-editor-context';
 
+/** One throwaway log for the whole file: a test must not append to the live one. */
+const TEST_LOG = '/tmp/editor-context-client-test.log';
+
 /**
  * Load `lib/client.js` and return its module exports.
  * @returns {Promise<{id: string, exports: {apply: Function, inject: string[]}, react: object, effects: Function[]}>}
@@ -103,7 +106,7 @@ test('apply waits for the four services it reaches through', async () => {
 test('apply registers one rule, two slot entries and one trigger source', async () => {
   const { exports } = await loadClientHalf();
   const ctx = fakeCtx();
-  exports.apply(ctx);
+  exports.apply(ctx, { logFile: TEST_LOG });
   assert.deepEqual(ctx.state.rules.map((r) => r.id), ['editorPosition']);
   assert.deepEqual(
     ctx.registrations.map((r) => `${r.slot} ${r.definition.key ?? r.definition.id}`),
@@ -115,7 +118,7 @@ test('apply registers one rule, two slot entries and one trigger source', async 
 test('the intake slot resolves the composer it should insert into', async () => {
   const { exports } = await loadClientHalf();
   const ctx = fakeCtx();
-  exports.apply(ctx);
+  exports.apply(ctx, { logFile: TEST_LOG });
   const intake = ctx.registrations.find((r) => r.definition.id === 'editor-position-intake');
 
   // A slot's `inject` is the supported way to learn which session is on screen.
@@ -155,7 +158,7 @@ test('the intake slot resolves the composer it should insert into', async () => 
 test('the intake tolerates a session that has gone away', async () => {
   const { exports } = await loadClientHalf();
   const ctx = fakeCtx();
-  exports.apply(ctx);
+  exports.apply(ctx, { logFile: TEST_LOG });
   const props = ctx.registrations.find((r) => r.definition.id === 'editor-position-intake').definition.inject('gone');
   ctx.sessions.scope = () => undefined;
   assert.equal(props.insert({ absolutePath: '/w/src/a.ts' }), false);
@@ -169,7 +172,7 @@ test('the rule beats the built-in file rule at the same start', async () => {
   const { exports } = await loadClientHalf();
   const rule = (() => {
     const ctx = fakeCtx();
-    exports.apply(ctx);
+    exports.apply(ctx, { logFile: TEST_LOG });
     return ctx.state.rules[0];
   })();
   // The shipped fileReferenceRule is order 30; lower wins a same-start tie.
@@ -179,7 +182,7 @@ test('the rule beats the built-in file rule at the same start', async () => {
 test('the rule parses a range, a single line and a quoted path', async () => {
   const { exports } = await loadClientHalf();
   const ctx = fakeCtx();
-  exports.apply(ctx);
+  exports.apply(ctx, { logFile: TEST_LOG });
   const rule = ctx.state.rules[0];
 
   const text = 'see @/w/a/limit.go#L165-L185 then @/w/b.go#L7';
@@ -203,7 +206,7 @@ test('the rule parses a range, a single line and a quoted path', async () => {
 test('the rule leaves a bare @path to the built-in file rule', async () => {
   const { exports } = await loadClientHalf();
   const ctx = fakeCtx();
-  exports.apply(ctx);
+  exports.apply(ctx, { logFile: TEST_LOG });
   const rule = ctx.state.rules[0];
   assert.equal(rule.match('open @/w/a/limit.go please', 0), undefined);
 });
@@ -211,7 +214,7 @@ test('the rule leaves a bare @path to the built-in file rule', async () => {
 test('the rule ignores an @ glued to a word', async () => {
   const { exports } = await loadClientHalf();
   const ctx = fakeCtx();
-  exports.apply(ctx);
+  exports.apply(ctx, { logFile: TEST_LOG });
   const rule = ctx.state.rules[0];
   assert.equal(rule.match('mail me at a@b.go#L12', 0), undefined);
   assert.equal(rule.match('x@y.go#L12', 0), undefined);
@@ -220,7 +223,7 @@ test('the rule ignores an @ glued to a word', async () => {
 test('the rule returns the nearest candidate, not the first anywhere', async () => {
   const { exports } = await loadClientHalf();
   const ctx = fakeCtx();
-  exports.apply(ctx);
+  exports.apply(ctx, { logFile: TEST_LOG });
   const rule = ctx.state.rules[0];
   const text = '@/a.go#L1 and @/b.go#L2';
   const fromMiddle = rule.match(text, 10);
@@ -230,7 +233,7 @@ test('the rule returns the nearest candidate, not the first anywhere', async () 
 test('candidates come from the host endpoint and honour the query', async () => {
   const { exports } = await loadClientHalf();
   const ctx = fakeCtx();
-  exports.apply(ctx);
+  exports.apply(ctx, { logFile: TEST_LOG });
   const source = ctx.state.sources[0];
 
   const calls = [];
@@ -262,7 +265,7 @@ test('candidates come from the host endpoint and honour the query', async () => 
 test('a bare cursor becomes a single-line mention', async () => {
   const { exports } = await loadClientHalf();
   const ctx = fakeCtx();
-  exports.apply(ctx);
+  exports.apply(ctx, { logFile: TEST_LOG });
   const source = ctx.state.sources[0];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>
@@ -282,7 +285,7 @@ test('a bare cursor becomes a single-line mention', async () => {
 test('every failure mode is an empty menu, never an error', async () => {
   const { exports } = await loadClientHalf();
   const ctx = fakeCtx();
-  exports.apply(ctx);
+  exports.apply(ctx, { logFile: TEST_LOG });
   const source = ctx.state.sources[0];
   const originalFetch = globalThis.fetch;
   const scenarios = [
@@ -306,7 +309,7 @@ test('every failure mode is an empty menu, never an error', async () => {
 test('onPick inserts a reference node with a short label', async () => {
   const { exports } = await loadClientHalf();
   const ctx = fakeCtx();
-  exports.apply(ctx);
+  exports.apply(ctx, { logFile: TEST_LOG });
   const candidate = { value: JSON.stringify({ mention: '@/w/a/limit.go#L146-L154', label: 'limit.go:146-154' }) };
   const outcome = ctx.state.sources[0].onPick({ candidate, action: 'pick' });
   assert.deepEqual(outcome, {
@@ -329,7 +332,7 @@ test('onPick inserts a reference node with a short label', async () => {
 test('the source carries a codec, without which the send path rejects the draft', async () => {
   const { exports } = await loadClientHalf();
   const ctx = fakeCtx();
-  exports.apply(ctx);
+  exports.apply(ctx, { logFile: TEST_LOG });
   const source = ctx.state.sources[0];
   // `serializeReference` rejects when the owning source has no codec, and the
   // submission is blocked rather than downgraded — an observed failure mode.
@@ -346,7 +349,7 @@ test('the source carries a codec, without which the send path rejects the draft'
 test('the node component renders the address it was given', async () => {
   const { exports } = await loadClientHalf();
   const ctx = fakeCtx();
-  exports.apply(ctx);
+  exports.apply(ctx, { logFile: TEST_LOG });
   const [{ component }] = ctx.state.nodes;
   const element = component({ node: { data: { path: '/w/a/limit.go', startLine: 165, endLine: 185 } } });
   assert.equal(element.type, 'code');
@@ -370,7 +373,7 @@ async function until(predicate, timeoutMs = 4_000) {
 test('the intake long-polls, inserts what arrives, and never replays a seq', async () => {
   const { exports, effects } = await loadClientHalf();
   const ctx = fakeCtx();
-  exports.apply(ctx);
+  exports.apply(ctx, { logFile: TEST_LOG });
   const intake = ctx.registrations.find((r) => r.definition.id === 'editor-position-intake');
 
   const inserted = [];

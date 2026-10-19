@@ -13,6 +13,11 @@ The registry scan adapts, and reacts.
   closed window is dropped at once instead of being retried until the next tick.
 - **Added** — `scanInterval()` is exported and tested on its own: the policy is
   four lines and does not need a minute-long timer to verify.
+- **Changed** — the plugin's log now lives beside the configured `stateDir`
+  (`<stateDir>/plugin.log`, or `logFile`), which is the same path as before for
+  the default directory. The tests used to append to the live log, and two
+  writers in one file is how a timestamp order stops meaning anything — it made
+  a real mount look like it happened out of order.
 
 ## 0.7.0 — 2026-10-19
 

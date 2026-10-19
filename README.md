@@ -116,6 +116,7 @@ exists.
     # includeText: true              # ask for the selected text, not only the address
     # autoSelection: false           # also receive every changed selection
     # stateDir: "~/.editor-context"  # where the extension writes window state
+    # logFile: ""                    # defaults to <stateDir>/plugin.log
     # maxAgeSeconds: 3600
     # http: false                    # disable the browser routes entirely
     # httpPath: /editor-context/position
