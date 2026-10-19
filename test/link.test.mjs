@@ -11,13 +11,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { createLink } from '../lib/link.js';
+import { DEFAULT_FAST_MS, DEFAULT_SLOW_MS, createLink, scanInterval } from '../lib/link.js';
 
 /** A subscriber double that records the lifecycle and can be made to look ready. */
 function harness() {
   const made = [];
   const connect = (options) => {
     const subscriber = {
+      options,
       url: options.url,
       started: false,
       stopped: false,
@@ -148,6 +149,8 @@ test('status reports one entry per link, with what the publisher said about itse
 
   const status = link.status();
   assert.equal(status.subscribed, true);
+  assert.equal(status.scan.intervalMs, 60_000, 'one ready link out of one: the slow cadence');
+  assert.ok(status.scan.scans >= 1);
   assert.deepEqual(status.connections, [
     {
       url: 'ws://127.0.0.1:5001/editor-context',
@@ -158,5 +161,50 @@ test('status reports one entry per link, with what the publisher said about itse
     },
   ]);
   link.stop();
-  assert.deepEqual(link.status(), { subscribed: false, connections: [] });
+  assert.deepEqual(link.status().connections, []);
+  assert.equal(link.status().subscribed, false);
+});
+
+test('the scan interval is short while something is missing, long once all is well', () => {
+  assert.equal(scanInterval({ ready: 0, total: 0 }), DEFAULT_FAST_MS, 'nothing connected: look often');
+  assert.equal(scanInterval({ ready: 1, total: 2 }), DEFAULT_FAST_MS, 'one window missing: keep looking');
+  assert.equal(scanInterval({ ready: 2, total: 2 }), DEFAULT_SLOW_MS, 'everything ready: only a new window can appear');
+  assert.equal(scanInterval({ ready: 2, total: 2, fastMs: 1, slowMs: 2 }), 2);
+});
+
+test('a link that leaves ready triggers a scan within the debounce', async () => {
+  const h = harness();
+  let scans = 0;
+  const link = linkWith(h, async () => {
+    scans += 1;
+    return [endpoint('ws://127.0.0.1:5001/editor-context', 1)];
+  }, { debounceMs: 5 });
+  link.start();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const [subscriber] = h.made;
+  subscriber.subscribed = true;
+  subscriber.state = 'ready';
+
+  const before = scans;
+  subscriber.options.onStateChange('absent', 'ready');
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.ok(scans > before, 'a window that dies must be noticed before the slow tick, not after it');
+  link.stop();
+});
+
+test('a link becoming ready does not trigger a scan', async () => {
+  const h = harness();
+  let scans = 0;
+  const link = linkWith(h, async () => {
+    scans += 1;
+    return [endpoint('ws://127.0.0.1:5001/editor-context', 1)];
+  }, { debounceMs: 5 });
+  link.start();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const [subscriber] = h.made;
+  const before = scans;
+  subscriber.options.onStateChange('ready', 'connecting');
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(scans, before, 'connecting is not evidence that a window is gone');
+  link.stop();
 });

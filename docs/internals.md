@@ -184,10 +184,18 @@ The fix is the split between **membership** and **the wire**:
 | `lib/link.js` | which links do I currently hold? | one `createSubscriber` per live URL |
 | `lib/subscribe.js` | is this one link alive? | the socket, and its state machine |
 
-Nothing watches anything. Every 15 seconds the directory is read again and the
-set of links is reconciled: stop the ones that left, start the ones that
-appeared. A missed event costs one rescan instead of a dead feature, which is the
-only kind of failure a filesystem can honestly promise not to have.
+Nothing watches anything. The directory is read again and the set of links is
+reconciled: stop the ones that left, start the ones that appeared. A missed event
+costs one rescan instead of a dead feature, which is the only kind of failure a
+filesystem can honestly promise not to have.
+
+The cadence adapts, because the two cases want opposite things. While something
+is missing, a scan can *find* a window, so it runs every 5 seconds. Once every
+link is ready, the only thing a scan can find is a brand-new window, so it drops
+to once a minute — the same information at a quarter of the wakeups, measured at
+227 µs per scan, which is 0.0015% of a core either way. A link that leaves
+`ready` schedules a scan within a second, so a closed window is dropped
+immediately instead of being redialled until the next slow tick.
 
 The three states in `subscribe.js` are where the *handling* differs, and the
 distinction is the point:

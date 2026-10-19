@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.1 — 2026-10-19
+
+The registry scan adapts, and reacts.
+
+- **Changed** — the scan interval is no longer a constant. While any link is not
+  ready it runs every 5s (that is when a scan can find a window); once every link
+  is ready it drops to 60s (the only thing left to find is a new window). Fewer
+  wakeups, and faster in the case that matters — the old fixed 15s was slower
+  than needed when broken and noisier than needed when fine.
+- **Added** — a link that leaves `ready` schedules a scan within a second, so a
+  closed window is dropped at once instead of being retried until the next tick.
+- **Added** — `scanInterval()` is exported and tested on its own: the policy is
+  four lines and does not need a minute-long timer to verify.
+
 ## 0.7.0 — 2026-10-19
 
 One link per editor window, found through the registry the extension now writes.
