@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.7.0 — 2026-10-19
+
+One link per editor window, found through the registry the extension now writes.
+
+- **Added** — `lib/registry.js`: reads `<stateDir>/endpoints/`, and keeps an
+  announcement only when its pid is alive **and** its heartbeat is recent. A
+  file this plugin cannot parse, or that names a non-loopback URL, is skipped —
+  a writable file in `$HOME` must not be able to point the socket anywhere.
+- **Added** — `lib/link.js`: membership, not the wire. Each scan reconciles the
+  live links against the registry, so a window that closes, a window that opens
+  on another port, and a window that restarts are one event each — and a missed
+  event costs a rescan, not a dead feature. The configured `wsUrl` is still
+  dialled when the registry is empty, so a pre-0.5 extension keeps working.
+- **Added** — `GET /editor-context/status`: which windows are connected, what
+  each one said in its `hello`, and whether any of them acknowledged. Silence was
+  the hard failure to diagnose; this is the one place outside the log where it is
+  visible.
+- **Changed** — `createSubscriber` now keeps the `hello` (`peer`), reports a
+  `state` (`absent` / `connecting` / `ready` / `refused`), and treats a refused
+  token or an unknown protocol as **terminal**: retrying cannot fix either, and
+  the retries were hiding the one thing the user has to change.
+- **Changed** — a watchdog closes a subscribed socket that has been silent for
+  90s. The extension pings every 30s, so silence means a half-open link that will
+  never correct itself — it would otherwise sit there looking connected.
+
 ## 0.6.0 — 2026-10-17
 
 The editor pushes over a socket; the watcher, the scan and the long-poll cursor's

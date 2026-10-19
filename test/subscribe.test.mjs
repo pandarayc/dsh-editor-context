@@ -206,3 +206,75 @@ test('a socket that cannot even be constructed schedules a retry', async () => {
   assert.ok(instance.attempts >= 2, 'and it keeps trying');
   instance.stop();
 });
+
+test('the hello is kept: the publisher describes itself before we subscribe', () => {
+  const { instance, fake } = subscriber();
+  instance.start();
+  fake.last.emit('open');
+  fake.last.message({
+    type: 'hello',
+    protocol: 'editor-context/1',
+    pid: 99,
+    appName: 'Cursor',
+    workspaceFolders: ['/w'],
+    requiresToken: false,
+  });
+  assert.deepEqual(instance.peer, { pid: 99, appName: 'Cursor', workspaceFolders: ['/w'], requiresToken: false });
+  assert.equal(instance.state, 'connecting');
+  instance.stop();
+});
+
+test('a refused token stops the retries instead of repeating the question', async () => {
+  const { instance, fake, lines } = subscriber({ retryMs: 5 });
+  instance.start();
+  fake.last.emit('open');
+  fake.last.message({ type: 'hello', requiresToken: true });
+  fake.last.message({ type: 'error', message: 'bad token' });
+
+  assert.equal(instance.state, 'refused');
+  assert.equal(instance.subscribed, false);
+  assert.match(lines.join('\n'), /publisher refused: bad token/);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(fake.sockets.length, 1, 'a wrong secret will still be wrong in thirty seconds');
+  instance.stop();
+});
+
+test('a protocol this client does not speak is refused, not retried', async () => {
+  const { instance, fake, lines } = subscriber({ retryMs: 5 });
+  instance.start();
+  fake.last.emit('open');
+  fake.last.message({ type: 'hello', protocol: 'editor-context/2', requiresToken: false });
+
+  assert.equal(instance.state, 'refused');
+  assert.match(lines.join('\n'), /speaks editor-context\/2/);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(fake.sockets.length, 1, 'retrying cannot teach either side a new protocol');
+  instance.stop();
+});
+
+test('a refusal can be lifted once the endpoint is worth another try', async () => {
+  const { instance, fake } = subscriber({ retryMs: 5 });
+  instance.start();
+  fake.last.emit('open');
+  fake.last.message({ type: 'hello', protocol: 'editor-context/2', requiresToken: false });
+  assert.equal(instance.state, 'refused');
+
+  instance.reset();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(fake.sockets.length, 2);
+  instance.stop();
+});
+
+test('a socket that goes silent after subscribing is reconnected by the watchdog', async () => {
+  const { instance, fake, lines } = subscriber({ retryMs: 5, watchdogMs: 20 });
+  instance.start();
+  fake.last.emit('open');
+  fake.last.message({ type: 'hello', protocol: 'editor-context/1', requiresToken: false });
+  fake.last.message({ type: 'subscribed', name: 'dsh', includeText: false, autoSelection: false });
+  assert.equal(instance.state, 'ready');
+
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.ok(fake.sockets.length >= 2, 'silence on a subscribed socket is a dead link, not a quiet one');
+  assert.match(lines.join('\n'), /no frame for 20ms/);
+  instance.stop();
+});

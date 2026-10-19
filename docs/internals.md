@@ -168,3 +168,38 @@ things about that are worth knowing:
   `uiConversation.userText`, both of which this plugin already depends on. The
   session id itself comes from a slot's `inject(sessionId)`, which is the supported
   way to learn which conversation is on screen.
+
+## Two layers: the registry says who, the link says how
+
+A socket needs a port, and a port is a constant only one process can hold. The
+first design had every consumer dial `127.0.0.1:7788`, which is correct exactly
+until someone opens a second editor window — and then the second window has no
+socket, no error, and no way to say so.
+
+The fix is the split between **membership** and **the wire**:
+
+| Layer | Question | Answer lives in |
+|---|---|---|
+| `lib/registry.js` | which windows exist, and where do I dial them? | `<stateDir>/endpoints/<pid>.json` |
+| `lib/link.js` | which links do I currently hold? | one `createSubscriber` per live URL |
+| `lib/subscribe.js` | is this one link alive? | the socket, and its state machine |
+
+Nothing watches anything. Every 15 seconds the directory is read again and the
+set of links is reconciled: stop the ones that left, start the ones that
+appeared. A missed event costs one rescan instead of a dead feature, which is the
+only kind of failure a filesystem can honestly promise not to have.
+
+The three states in `subscribe.js` are where the *handling* differs, and the
+distinction is the point:
+
+- **absent** — the editor is not there. Retry quietly, back off to 30s. This is
+  the normal state of a closed editor, not an incident.
+- **ready → absent** — the link dropped after working. Retry from the short
+  delay, because this is the case where the user is watching.
+- **refused** — a bad token or an unknown protocol. *Stop.* Retrying would repeat
+  a question whose answer cannot change, and it would bury the one fact the user
+  needs.
+
+The watchdog closes the last gap: the extension pings every 30 seconds, so a
+subscribed socket that has been silent for 90 is half-open. Without it that
+socket looks connected forever, which is worse than an error.

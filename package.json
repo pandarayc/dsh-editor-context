@@ -1,6 +1,6 @@
 {
   "name": "dsh-editor-context",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "DSH plugin: turn the lines you are looking at in Cursor/VS Code into a chip in the composer, delivered over the editor's WebSocket.",
   "license": "MIT",
   "type": "module",

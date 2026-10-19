@@ -86,6 +86,14 @@ That direction is not arbitrary: Node ships a WebSocket client and no server, so
 the half that needs a library is the one living in a VSIX — which is why this
 plugin still has no dependencies at all.
 
+One extension window is one server, and a port only one process can hold, so the
+extension announces where each window actually ended up in
+`~/.editor-context/endpoints/<pid>.json`. The plugin reads that directory and
+keeps **one link per window** — a second window, a restarted extension or a
+changed port all look the same from here: the next scan sees a different
+directory than the last one. `wsUrl` is still dialled when the registry is empty,
+which is what a pre-0.5 extension looks like.
+
 Neither hop is an interval. The editor pushes; the plugin's long poll parks until
 there is something to hand the browser. An idle conversation is one open socket
 and one parked response, not a request per second.
@@ -113,15 +121,23 @@ exists.
     # httpPath: /editor-context/position
 ```
 
-`wsUrl` must match `editorContext.ws.host` / `.port` / `.path` on the extension
-side. If that side sets a token, this side needs the same string or the publisher
-refuses the subscription — and says so in the DSH log rather than failing
-silently.
+`wsUrl` is the **fallback**, not the address: with extension 0.5.0 or newer the
+real endpoint comes from the registry, and this is only dialled when the registry
+is empty. If the extension sets a token, this side needs the same string or the
+publisher refuses the subscription — and a refusal is terminal, reported once,
+because a wrong secret is still wrong thirty seconds later.
 
 The plugin mounts a read-only `GET /editor-context/position` on DSH's web server,
 which the browser half reads. It returns an address and a line range — never file
 contents. A path the extension's `excludeGlobs` rejected answers 404, so the
 exclusion rule does not leak the path it is hiding.
+
+`GET /editor-context/status` answers "is an editor connected, and which one":
+one entry per link with its state (`absent`, `connecting`, `ready`, `refused`),
+dial count, and the `hello` the window sent — app name, pid, workspace folders.
+It says nothing about files, and it exists because the interesting failure is
+silence: a plugin with no socket looks exactly like a user who has not pressed
+anything.
 
 That route is matched before DSH's SPA fallback and is therefore **not
 additionally authenticated**. It is meant for loopback, which is the default;
@@ -134,7 +150,8 @@ additionally authenticated**. It is meant for loopback, which is the default;
 | `@` shows no **editor position** row | `cat ~/.editor-context/windows/*.json` — no file means the extension is not installed or not activated |
 | …the row is there but stale | the position is older than `maxAgeSeconds`; move the caret in the editor |
 | …the row is missing only in some files | the path matches `editorContext.excludeGlobs` on the extension side. That is by design: not even the path is published |
-| nothing happens at all | `curl -s http://127.0.0.1:3080/editor-context/position` — expect `{"ok":true,…}` or a `404`, never a connection error |
+| nothing happens at all | `curl -s http://127.0.0.1:3080/editor-context/status` — `connections` empty means no editor is linked; a `refused` state names why |
+| …the status route is 404 | the plugin did not mount, or `http: false`; `~/.editor-context/plugin.log` says which |
 
 ## Limitations
 
@@ -150,9 +167,11 @@ additionally authenticated**. It is meant for loopback, which is the default;
 
 ```
 lib/state.js       the position document: one schema, one parser
-lib/subscribe.js   host: the WebSocket client that dials the editor
+lib/registry.js    host: which editor windows are announcing an endpoint, and where
+lib/link.js        host: one subscriber per window, reconciled against the registry
+lib/subscribe.js   host: the WebSocket client that dials one editor window
 lib/deliveries.js  host: the queue between that socket and the browser
-lib/http.js        host: the two read-only routes, pure and unit-tested
+lib/http.js        host: the three read-only routes, pure and unit-tested
 lib/index.js       host: mounts the routes and the token-grammar prompt section
 lib/client.js      browser: the @ source, the UserText rule, the chip component,
                    and the intake that inserts what the editor sends
@@ -171,7 +190,8 @@ npm test    # 39 passed
 Five files: `test/editor-context.test.mjs` (the reader, the config, and what
 `apply` registers), `test/http.test.mjs` (both routes and the browser payload),
 `test/deliveries.test.mjs` (the queue), `test/subscribe.test.mjs` (the socket
-client, against a socket double), and `test/client.test.mjs`, which loads the
+client, against a socket double), `test/registry.test.mjs` and
+`test/link.test.mjs` (discovery and membership), and `test/client.test.mjs`, which loads the
 **real** bundle behind a fake `window.__ModuleLoader__` and asserts on the bytes
 that ship.
 

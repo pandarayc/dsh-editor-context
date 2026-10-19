@@ -167,14 +167,14 @@ test('readPosition keeps an empty context, which is how "publish nothing" travel
   assert.equal(silent.context, '', 'no file open is silent, not narrated');
 });
 
-test('apply registers the position route and the token-grammar section, and nothing else', () => {
+test('apply registers the three read-only routes and the token-grammar section, and nothing else', () => {
   const ctx = fakeCtx();
   apply(ctx, { stateDir: '/x' });
 
   assert.deepEqual(
     ctx.routes.map((route) => `${route.kind} ${route.path}`),
-    ['exact /editor-context/position', 'exact /editor-context/next'],
-    'the browser half reads the current position here, and parks its long poll there',
+    ['exact /editor-context/position', 'exact /editor-context/next', 'exact /editor-context/status'],
+    'the browser half reads the current position here, parks its long poll there, and can ask which editor is connected',
   );
   assert.deepEqual(
     ctx.sections.map((section) => [section.name, section.order]),
@@ -207,7 +207,7 @@ test('http: false leaves the plugin with only the grammar section', () => {
 test('a custom httpPath moves the current-position route only', () => {
   const moved = fakeCtx();
   apply(moved, { httpPath: '/custom/where' });
-  assert.deepEqual(moved.routes.map((route) => route.path), ['/custom/where', '/editor-context/next']);
+  assert.deepEqual(moved.routes.map((route) => route.path), ['/custom/where', '/editor-context/next', '/editor-context/status']);
 
   const bogus = fakeCtx();
   apply(bogus, { httpPath: 'custom/where' });
