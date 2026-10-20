@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.2 — 2026-10-20
+
+The command token is consumed before the position is inserted.
+
+- **Fixed** — picking a row in `/editors` left the typed `/ed…` in the composer.
+  The command shell removes the token *after* `onSelect` resolves, and that
+  removal is a revision CAS against the draft: inserting the chip inside the
+  callback bumped the revision, the CAS failed, and the token stayed. The
+  insertion now runs one macrotask later, after the shell has consumed the token.
+  This is an assumption about the shell's ordering, so it is written down and
+  tested rather than left implicit.
+
 ## 0.8.1 — 2026-10-20
 
 A fresh page no longer replays a click from before it existed.

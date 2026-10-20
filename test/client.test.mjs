@@ -510,6 +510,10 @@ test('picking a row inserts that window\'s position, not the newest one', async 
   try {
     await command.ui.onSelect({ id: '4242', label: 'Cursor · base' }, { sessionId: 's1' });
     assert.equal(calls[0], '/editor-context/position?pid=4242', 'the row is an address, not a hint');
+    assert.equal(inserted, undefined, 'the draft must be untouched while the shell is consuming the token');
+    // The shell consumes the token in a microtask after onSelect resolves; the
+    // insertion is deferred to the next macrotask so its revision CAS still holds.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(inserted.length, 1);
     assert.equal(inserted[0].ref, '@/w/src/fancygame/hallsrv/internal/logic/logic_purchase/limit.go#L165-L185');
   } finally {
