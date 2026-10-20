@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.0 — 2026-10-19
+
+The DSH side gets a way to see — and pick — the editor it is talking to.
+
+- **Added** — the `/editors` command: a picker of the linked windows (app name,
+  project folder, state, pid). Picking one inserts **that window's** current
+  position into the draft, rather than whichever window happened to move last.
+- **Added** — `GET /editor-context/position?pid=` reads one named window; without
+  it the route still answers with the newest, exactly as before.
+- **Renamed** — `/editor-context/status` is now `/editor-context/editors`. It was
+  never a process status: it lists editor windows, and `status` is a name that
+  describes half the world — including the DSH itself, which is what a reader
+  would assume it meant.
+- **Changed** — a named position request that finds no file answers 404 instead
+  of falling back to the newest window. Falling back would hand back a different
+  editor than the one the user picked, which is worse than nothing.
+
 ## 0.7.1 — 2026-10-19
 
 The registry scan adapts, and reacts.

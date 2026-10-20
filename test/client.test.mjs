@@ -51,11 +51,11 @@ async function loadClientHalf() {
 
 /** A cordis context that records registrations, keyed by the slot they went into. */
 function fakeCtx() {
-  const state = { rules: [], nodes: [], sources: [], effects: 0 };
+  const state = { rules: [], nodes: [], sources: [], effects: 0, commands: [] };
   const registrations = [];
   const sessions = { scope: (sessionId) => ({ sessionId, kind: 'actx' }) };
   const conversation = { input: { for: () => ({ addFiles: () => true }) } };
-  return {
+  const api = {
     ...state,
     state,
     registrations,
@@ -72,12 +72,30 @@ function fakeCtx() {
       },
     },
     inputTriggers: { registerSource: (source) => state.sources.push(source) },
+    /**
+     * Optional-service injection, the way cordis does it. Only services a test
+     * cares about are offered, and a service that is absent simply never calls
+     * back — which is also how a missing `commandUi` degrades in production.
+     */
+    inject: (names, callback) => {
+      const scoped = Object.create(api);
+      if (names.includes('commandUi')) {
+        scoped.commandUi = {
+          register: (contribution) => {
+            state.commands.push(contribution);
+            return () => undefined;
+          },
+        };
+      }
+      callback(scoped);
+    },
     get: (service) => (service === 'conversation' ? conversation : undefined),
     effect: (fn) => {
       state.effects += 1;
       return fn();
     },
   };
+  return api;
 }
 
 /** One JSON response double. */
@@ -424,5 +442,77 @@ test('the intake long-polls, inserts what arrives, and never replays a seq', asy
     for (const stop of effects) if (typeof stop === 'function') stop();
     if (previousFetch === undefined) delete globalThis.fetch;
     else globalThis.fetch = previousFetch;
+  }
+});
+
+test('the /editors command is registered under a name that says what it lists', async () => {
+  const { exports } = await loadClientHalf();
+  const ctx = fakeCtx();
+  exports.apply(ctx, { logFile: TEST_LOG });
+  assert.equal(ctx.state.commands.length, 1);
+  const [command] = ctx.state.commands;
+  assert.equal(command.name, 'editors', '"status" describes a process; this describes one thing');
+  assert.equal(typeof command.ui.options, 'function');
+  assert.equal(command.ui.kind, 'popupSelect');
+});
+
+test('its rows are the linked windows, and a link with no greeting is not a row', async () => {
+  const { exports } = await loadClientHalf();
+  const ctx = fakeCtx();
+  exports.apply(ctx, { logFile: TEST_LOG });
+  const [command] = ctx.state.commands;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    jsonResponse({
+      ok: true,
+      connections: [
+        {
+          url: 'ws://127.0.0.1:5001/editor-context',
+          state: 'ready',
+          subscribed: true,
+          peer: { pid: 4242, appName: 'Cursor', workspaceFolders: ['/w/qihuan/base'] },
+        },
+        { url: 'ws://127.0.0.1:5002/editor-context', state: 'connecting', subscribed: false, peer: null },
+      ],
+    });
+  try {
+    const rows = await command.ui.options({ sessionId: 's' }, undefined);
+    assert.equal(rows.length, 1, 'a link that has not said who it is has no window to act on');
+    assert.equal(rows[0].id, '4242');
+    assert.equal(rows[0].label, 'Cursor · base');
+    // The row's state word follows the browser language, which is not the point
+    // of this test; the pid is.
+    assert.match(rows[0].detail, /pid 4242$/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('picking a row inserts that window\'s position, not the newest one', async () => {
+  const { exports } = await loadClientHalf();
+  const ctx = fakeCtx();
+  let inserted;
+  ctx.conversation.input.for = () => ({
+    addFiles: (references) => {
+      inserted = references;
+      return true;
+    },
+  });
+  exports.apply(ctx, { logFile: TEST_LOG });
+  const [command] = ctx.state.commands;
+
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    calls.push(url);
+    return jsonResponse(READING);
+  };
+  try {
+    await command.ui.onSelect({ id: '4242', label: 'Cursor · base' }, { sessionId: 's1' });
+    assert.equal(calls[0], '/editor-context/position?pid=4242', 'the row is an address, not a hint');
+    assert.equal(inserted.length, 1);
+    assert.equal(inserted[0].ref, '@/w/src/fancygame/hallsrv/internal/logic/logic_purchase/limit.go#L165-L185');
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });

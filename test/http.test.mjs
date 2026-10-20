@@ -224,3 +224,28 @@ test('a reader that aborts is still released', async () => {
   assert.deepEqual(seen, [true], 'a closed tab must not leave a parked promise behind');
   assert.equal(res.status, 204);
 });
+
+test('a ?pid= asks for one window rather than the newest', async () => {
+  const seen = [];
+  const route = createPositionRoute({
+    readPosition: async (_stateDir, _maxAgeMs, pid) => {
+      seen.push(pid);
+      return SELECTION;
+    },
+    stateDir: '/x',
+    maxAgeMs: 1,
+  });
+
+  const named = fakeRes();
+  await route.handler({ method: 'GET', url: '/editor-context/position?pid=4242' }, named);
+  assert.equal(named.status, 200);
+  assert.deepEqual(seen, [4242]);
+
+  const plain = fakeRes();
+  await route.handler({ method: 'GET', url: '/editor-context/position' }, plain);
+  assert.deepEqual(seen, [4242, undefined], 'no pid means "the newest", as before');
+
+  const bogus = fakeRes();
+  await route.handler({ method: 'GET', url: '/editor-context/position?pid=nope' }, bogus);
+  assert.deepEqual(seen, [4242, undefined, undefined], 'a garbage pid must not pick a window by accident');
+});

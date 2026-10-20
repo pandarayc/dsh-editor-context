@@ -133,12 +133,23 @@ which the browser half reads. It returns an address and a line range — never f
 contents. A path the extension's `excludeGlobs` rejected answers 404, so the
 exclusion rule does not leak the path it is hiding.
 
-`GET /editor-context/status` answers "is an editor connected, and which one":
-one entry per link with its state (`absent`, `connecting`, `ready`, `refused`),
-dial count, and the `hello` the window sent — app name, pid, workspace folders.
-It says nothing about files, and it exists because the interesting failure is
-silence: a plugin with no socket looks exactly like a user who has not pressed
-anything.
+### `/editors`
+
+Typing `/editors` in a conversation opens a picker of the **editor windows this
+plugin is talking to** — app name, project folder, state and pid. Picking one
+inserts *that* window's current position into the draft, which is the DSH-side
+equivalent of going back to the editor and pressing Add to Bot.
+
+It is a picker rather than a status dump because the question behind it is
+"which Cursor am I pointing at", and with two windows open that has no single
+answer. It is named `editors` and not `status`: `status` describes a whole
+process, and a keyword nobody can guess is a failure of its own.
+
+The same data is on `GET /editor-context/editors`, one entry per link with its
+state (`absent`, `connecting`, `ready`, `refused`), dial count, and the `hello`
+the window sent. It says nothing about files, and it exists because the
+interesting failure is silence: a plugin with no socket looks exactly like a user
+who has not pressed anything.
 
 That route is matched before DSH's SPA fallback and is therefore **not
 additionally authenticated**. It is meant for loopback, which is the default;
@@ -151,8 +162,8 @@ additionally authenticated**. It is meant for loopback, which is the default;
 | `@` shows no **editor position** row | `cat ~/.editor-context/windows/*.json` — no file means the extension is not installed or not activated |
 | …the row is there but stale | the position is older than `maxAgeSeconds`; move the caret in the editor |
 | …the row is missing only in some files | the path matches `editorContext.excludeGlobs` on the extension side. That is by design: not even the path is published |
-| nothing happens at all | `curl -s http://127.0.0.1:3080/editor-context/status` — `connections` empty means no editor is linked; a `refused` state names why |
-| …the status route is 404 | the plugin did not mount, or `http: false`; `~/.editor-context/plugin.log` says which |
+| nothing happens at all | `/editors` in a conversation, or `curl -s http://127.0.0.1:3080/editor-context/editors` — no rows means no editor is linked; a `refused` state names why |
+| …`/editors` is missing from the menu | the plugin did not mount, or `http: false`; `~/.editor-context/plugin.log` says which |
 
 ## Limitations
 

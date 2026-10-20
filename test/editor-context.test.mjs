@@ -176,8 +176,8 @@ test('apply registers the three read-only routes and the token-grammar section, 
 
   assert.deepEqual(
     ctx.routes.map((route) => `${route.kind} ${route.path}`),
-    ['exact /editor-context/position', 'exact /editor-context/next', 'exact /editor-context/status'],
-    'the browser half reads the current position here, parks its long poll there, and can ask which editor is connected',
+    ['exact /editor-context/position', 'exact /editor-context/next', 'exact /editor-context/editors'],
+    'the browser half reads the current position here, parks its long poll there, and lists the connected editors there',
   );
   assert.deepEqual(
     ctx.sections.map((section) => [section.name, section.order]),
@@ -210,7 +210,7 @@ test('http: false leaves the plugin with only the grammar section', () => {
 test('a custom httpPath moves the current-position route only', () => {
   const moved = fakeCtx();
   apply(moved, { httpPath: '/custom/where', logFile: TEST_LOG });
-  assert.deepEqual(moved.routes.map((route) => route.path), ['/custom/where', '/editor-context/next', '/editor-context/status']);
+  assert.deepEqual(moved.routes.map((route) => route.path), ['/custom/where', '/editor-context/next', '/editor-context/editors']);
 
   const bogus = fakeCtx();
   apply(bogus, { httpPath: 'custom/where', logFile: TEST_LOG });
