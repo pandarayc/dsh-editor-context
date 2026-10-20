@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.1 — 2026-10-20
+
+A fresh page no longer replays a click from before it existed.
+
+- **Fixed** — the long poll started a caller with no cursor (`since=0`) at the
+  *beginning* of the queue, so a page reload or a host restart injected the last
+  delivery into whatever draft the user was typing in. That reads as "my text was
+  parsed wrong", which is exactly how it was reported.
+- **Changed** — `since=0`, a missing or malformed `since`, and a cursor *ahead*
+  of the queue all mean "start at the current head". A cursor ahead of the queue
+  is a host that restarted under the reader; replaying is wrong for both and
+  indistinguishable from a stall to the user.
+
 ## 0.8.0 — 2026-10-19
 
 The DSH side gets a way to see — and pick — the editor it is talking to.

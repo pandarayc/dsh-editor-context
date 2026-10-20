@@ -136,6 +136,9 @@ function fakeQueue(entries = []) {
   const asked = [];
   return {
     asked,
+    get latest() {
+      return entries.length === 0 ? 0 : entries[entries.length - 1].seq;
+    },
     async waitFor(since, { signal, timeoutMs }) {
       asked.push({ since, timeoutMs, signalled: signal !== undefined });
       return entries.find((entry) => entry.seq > since);
@@ -192,11 +195,11 @@ test('the long poll answers 204 when nothing arrived before the hold expires', a
   assert.equal(queue.asked[0].timeoutMs, 30);
 });
 
-test('a missing or malformed seq starts the caller at the beginning', async () => {
+test('a missing or malformed seq starts the caller at the current head', async () => {
   for (const url of ['/editor-context/next', '/editor-context/next?since=', '/editor-context/next?since=nope', '/editor-context/next?since=-1']) {
-    const queue = fakeQueue();
+    const queue = fakeQueue([{ seq: 4, at: 0, delivery: delivery() }]);
     await callNext(createRequestRoute({ queue, holdMs: 1 }), url);
-    assert.equal(queue.asked[0].since, 0, url);
+    assert.equal(queue.asked[0].since, 4, `${url} — a cursor nobody supplied must not replay the queue`);
   }
 });
 
@@ -248,4 +251,23 @@ test('a ?pid= asks for one window rather than the newest', async () => {
   const bogus = fakeRes();
   await route.handler({ method: 'GET', url: '/editor-context/position?pid=nope' }, bogus);
   assert.deepEqual(seen, [4242, undefined, undefined], 'a garbage pid must not pick a window by accident');
+});
+
+test('a reader with no cursor starts now, never at the beginning of the queue', async () => {
+  const { createDeliveryQueue } = await import('../lib/deliveries.js');
+  const queue = createDeliveryQueue();
+  queue.push({ delivery: { version: 1, absolutePath: '/w/old.go' } });
+  const route = createRequestRoute({ queue, holdMs: 5 });
+
+  const fresh = await callNext(route, '/editor-context/next?since=0');
+  assert.equal(fresh.status, 204, 'a fresh page must not replay a click from before it existed');
+
+  const ahead = await callNext(route, '/editor-context/next?since=99');
+  assert.equal(ahead.status, 204, 'a cursor ahead of the queue means the host restarted, not that there is news');
+
+  const pending = callNext(route, '/editor-context/next?since=1');
+  queue.push({ delivery: { version: 1, absolutePath: '/w/new.go' } });
+  const behind = await pending;
+  assert.equal(behind.status, 200, 'a reader that has a real cursor still gets the next delivery');
+  assert.equal(JSON.parse(behind.body).seq, 2);
 });
