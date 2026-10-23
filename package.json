@@ -5,6 +5,7 @@
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
+  "types": "./lib/types/index.d.ts",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/pandarayc/dsh-editor-context.git"
@@ -45,7 +46,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build"
   },
   "keywords": [
     "dsh",
@@ -53,5 +56,16 @@
     "deepseek-harness",
     "editor-context",
     "cursor"
-  ]
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.0-rc.12 <5"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
 }
