@@ -17,15 +17,22 @@
 ## 前置
 
 - DSH，跑 web profile（`dsh web`）
-- 编辑器半边：**[`vscode-editor-context`](https://github.com/pandarayc/vscode-editor-context)**，
-  负责写 `~/.editor-context/windows/*.json`
+- 编辑器半边：**Editor Context**，市场里的 `pandarayc.editor-context-bridge`
+  （[链接](https://marketplace.visualstudio.com/items?itemName=pandarayc.editor-context-bridge)），
+  0.5.0 以上。它负责写 `~/.editor-context/windows/*.json`，并在
+  `~/.editor-context/endpoints/` 里公布本插件要拨的 WebSocket。
 
 ## 安装
 
 ```bash
+dsh plugin --profile web add github:pandarayc/dsh-editor-context
+# 或者用本地检出：
 dsh plugin --profile web add /path/to/dsh-editor-context
 # 然后重启 dsh-web —— 插件在进程启动时加载
 ```
+
+包还没发到 npm，所以 `dsh plugin --profile web add dsh-editor-context` 现在解析不了；
+在发之前用上面的仓库形式。
 
 ## 用法
 
@@ -92,11 +99,12 @@ WebSocket 客户端但不带服务端，所以需要依赖的那一半正好是�
     # httpPath: /editor-context/position
 ```
 
-插件在 DSH 的 web server 上挂一条只读路由 `GET /editor-context/position`，浏览器半边
-靠它拿读数。返回的是地址与行区间，**不含文件内容**。被扩展 `excludeGlobs` 排除的路径
-返回 404——排除规则不会泄露它本想藏起来的那个路径。
+插件在 DSH 的 web server 上挂三条只读路由——`GET /editor-context/position`（当前读数）、
+`GET /editor-context/next`（长轮询）、`GET /editor-context/editors`（连上了哪些编辑器窗口），
+浏览器半边靠它们拿读数。返回的是地址与行区间，**不含文件内容**。被扩展 `excludeGlobs`
+排除的路径返回 404——排除规则不会泄露它本想藏起来的那个路径。
 
-这条路由在 DSH 的 SPA 兜底之前匹配，因此**不额外鉴权**。它的定位是本机（默认如此）；
+这些路由在 DSH 的 SPA 兜底之前匹配，因此**不额外鉴权**。它的定位是本机（默认如此）；
 `http: false` 可以整个去掉。
 
 ## 排查
@@ -106,24 +114,27 @@ WebSocket 客户端但不带服务端，所以需要依赖的那一半正好是�
 | 打 `@` 没有**编辑器位置**这一组 | `cat ~/.editor-context/windows/*.json`——没有文件说明扩展没装或没激活 |
 | 有这一行，但位置是旧的 | 读数超过了 `maxAgeSeconds`；在编辑器里动一下光标 |
 | 某些文件里没有这一行 | 命中扩展侧的 `editorContext.excludeGlobs`。这是有意为之：连路径都不发布 |
-| 完全没反应 | `curl -s http://127.0.0.1:3080/editor-context/position`——应该看到 `{"ok":true,…}` 或 `404`，绝不该是连不上 |
+| 完全没反应 | `curl -s http://127.0.0.1:3080/editor-context/editors`——没有行说明没有编辑器连上；`refused` 状态会写明原因 |
 
 ## 已知限制
 
 - **路径含空格需要引号形式**：`@"a b.go"#L12`。解析规则支持，候选列表目前还产不出这个形态。
-- **点 chip 不会跳回编辑器。** `vscode-editor-context` 只写文件，没有反向通道。
+- **点 chip 不会跳回编辑器。** 编辑器扩展只写文件，没有反向通道。
 - **排除规则在扩展侧配置**，不在这里。插件自己没有任何规则，也不需要：它只能提供扩展
   愿意发布的东西。
 
 ## 目录
 
 ```
-lib/state.js    位置文档：一套 schema，一个解析器
-lib/http.js     host：两条只读路由（纯函数，可单测）
-lib/requests.js host：长轮询背后的 fs.watch 队列
-lib/index.js    host：挂路由 + token 语法提示段
-lib/client.js   浏览器：@ 候选源 + UserText 规则 + chip 组件 +
-                把编辑器送来的位置插进草稿的 intake
+lib/state.js       位置文档：一套 schema，一个解析器
+lib/registry.js    host：哪些编辑器窗口在公布端点、在哪
+lib/link.js        host：每个窗口一个订阅者，按 registry 对账
+lib/subscribe.js   host：拨通某个编辑器窗口的 WebSocket 客户端
+lib/deliveries.js  host：那条 socket 与浏览器之间的队列
+lib/http.js        host：三条只读路由，纯函数、可单测
+lib/index.js       host：挂路由 + token 语法提示段
+lib/client.js      浏览器：@ 候选源 + UserText 规则 + chip 组件 +
+                   把编辑器送来的位置插进草稿的 intake
 ```
 
 这是**双面包**：host 半边跑在 DSH 进程里，浏览器半边由 DSH 的 client module 系统按
@@ -131,13 +142,14 @@ lib/client.js   浏览器：@ 候选源 + UserText 规则 + chip 组件 +
 跨包一律走 cordis service（`ctx.inputTriggers` / `ctx.uiConversation` / `ctx.slots`）。
 
 ```bash
-npm test    # 48 passed
+npm test    # 82 passed
 ```
 
-四个文件：`test/editor-context.test.mjs`（读取端、配置、`apply` 到底注册了什么）、
-`test/http.test.mjs`（两条路由）、`test/requests.test.mjs`（watcher 与长轮询，其中一个
-用例跑在真实 HTTP server 上）、`test/client.test.mjs`（**加载真实 bundle**，用假的
-`window.__ModuleLoader__` 与 `require`，断言的是要发出去的字节）。
+七个文件：`test/editor-context.test.mjs`（读取端、配置、`apply` 到底注册了什么）、
+`test/http.test.mjs`（三条路由与浏览器载荷）、`test/deliveries.test.mjs`（队列）、
+`test/subscribe.test.mjs`（socket 客户端，对着假 socket）、`test/registry.test.mjs` 与
+`test/link.test.mjs`（发现与成员对账）、`test/client.test.mjs`（**加载真实 bundle**，
+用假的 `window.__ModuleLoader__` 与 `require`，断言的是要发出去的字节）。
 
 关于「为什么这个插件不可能往对话里塞东西」「它以前塞过什么」，以及客户端那三个容易
 踩的点：[docs/internals.md](docs/internals.md)。

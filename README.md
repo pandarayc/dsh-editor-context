@@ -20,15 +20,22 @@ configure. A reference you typed needs none of that.
 ## What you need
 
 - DSH, running the web profile (`dsh web`)
-- The editor half: **[`vscode-editor-context`](https://github.com/pandarayc/vscode-editor-context)**,
-  publishing `~/.editor-context/windows/*.json`
+- The editor half: **Editor Context**, `pandarayc.editor-context-bridge` on the
+  [Marketplace](https://marketplace.visualstudio.com/items?itemName=pandarayc.editor-context-bridge),
+  0.5.0 or newer. It publishes `~/.editor-context/windows/*.json` and announces
+  the WebSocket this plugin dials in `~/.editor-context/endpoints/`.
 
 ## Install
 
 ```bash
+dsh plugin --profile web add github:pandarayc/dsh-editor-context
+# or a local checkout:
 dsh plugin --profile web add /path/to/dsh-editor-context
 # then restart dsh-web — plugins load at process start
 ```
+
+The package is not on npm yet, so `dsh plugin --profile web add dsh-editor-context`
+does not resolve; use the repository form above until it does.
 
 ## Use
 
@@ -169,8 +176,8 @@ additionally authenticated**. It is meant for loopback, which is the default;
 
 - **A path containing spaces needs the quoted form**, `@"a b.go"#L12`. The rule
   parses it; the candidate list does not yet produce it.
-- **Clicking a chip does not jump back to the editor.**
-  `vscode-editor-context` only writes files and has no inbound channel.
+- **Clicking a chip does not jump back to the editor.** The extension only writes
+  files and has no inbound channel.
 - **Exclusion is configured on the extension side**, not here. The plugin has no
   rules of its own, and none are needed: it can only offer what the extension
   chose to publish.
@@ -196,13 +203,13 @@ imports only `react`; cross-package reach is always through cordis services
 (`ctx.inputTriggers` / `ctx.uiConversation` / `ctx.slots`).
 
 ```bash
-npm test    # 39 passed
+npm test    # 82 passed
 ```
 
-Five files: `test/editor-context.test.mjs` (the reader, the config, and what
-`apply` registers), `test/http.test.mjs` (both routes and the browser payload),
-`test/deliveries.test.mjs` (the queue), `test/subscribe.test.mjs` (the socket
-client, against a socket double), `test/registry.test.mjs` and
+Seven files: `test/editor-context.test.mjs` (the reader, the config, and what
+`apply` registers), `test/http.test.mjs` (all three routes and the browser
+payload), `test/deliveries.test.mjs` (the queue), `test/subscribe.test.mjs` (the
+socket client, against a socket double), `test/registry.test.mjs` and
 `test/link.test.mjs` (discovery and membership), and `test/client.test.mjs`, which loads the
 **real** bundle behind a fake `window.__ModuleLoader__` and asserts on the bytes
 that ship.
