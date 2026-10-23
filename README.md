@@ -1,6 +1,6 @@
 # dsh-editor-context
 
-> **[English](README.md) · [中文](README.zh.md)**
+> **[English](README.md) · [中文](README.zh-CN.md)**
 
 Turn the lines you are looking at in Cursor / VS Code into a chip in the DSH
 composer.

@@ -1,6 +1,6 @@
 # dsh-editor-context
 
-> **[English](README.md) · [中文](README.zh.md)**
+> **[English](README.md) · [中文](README.zh-CN.md)**
 
 把「你正在 Cursor / VS Code 里看的那几行」变成 DSH 输入框里的一张 chip。
 
