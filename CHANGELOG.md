@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.3 — 2026-10-28
+
+Say which host this mounts in.
+
+- **Added** — peer ranges for the two client packages the browser half injects
+  (`@deepseek-ai/dsh-client-ui-input-trigger`, `@deepseek-ai/dsh-client-ui-conversation`),
+  both optional so a profile that already carries them never sees a warning.
+  An unsupported host now surfaces at install time rather than at the first `@`.
+- **Verified** — the host half mounts and serves its routes on
+  `@deepseek-ai/dsh` 0.2.2-alpha.2 (web profile): `GET /editor-context/position`
+  answers `{"ok":false}` with no editor attached, which is the documented
+  "no window" reading rather than a mount failure.
+
 ## 0.8.2 — 2026-10-20
 
 The command token is consumed before the position is inserted.

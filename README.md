@@ -19,7 +19,7 @@ configure. A reference you typed needs none of that.
 
 ## What you need
 
-- DSH, running the web profile (`dsh web`)
+- DSH 0.2.x, running the web profile (`dsh web`) — verified on `0.2.2-alpha.2`
 - The editor half: **Editor Context**, `pandarayc.editor-context-bridge` on the
   [Marketplace](https://marketplace.visualstudio.com/items?itemName=pandarayc.editor-context-bridge),
   0.5.0 or newer. It publishes `~/.editor-context/windows/*.json` and announces

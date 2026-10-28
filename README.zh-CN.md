@@ -16,7 +16,7 @@
 
 ## 前置
 
-- DSH，跑 web profile（`dsh web`）
+- DSH 0.2.x，跑 web profile（`dsh web`）——在 `0.2.2-alpha.2` 上验证
 - 编辑器半边：**Editor Context**，市场里的 `pandarayc.editor-context-bridge`
   （[链接](https://marketplace.visualstudio.com/items?itemName=pandarayc.editor-context-bridge)），
   0.5.0 以上。它负责写 `~/.editor-context/windows/*.json`，并在
